@@ -668,29 +668,130 @@ export default function Build() {
       )}
 
       <Dialog open={mediaOpen} onOpenChange={setMediaOpen}>
-        <DialogContent className="glass-strong max-w-2xl">
+        <DialogContent className="max-w-3xl bg-zinc-950 border-white/10 text-white">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><ImageIcon className="w-4 h-4 text-primary" /> Image studio</DialogTitle>
-            <DialogDescription>Upload local images or generate realistic images for the current website prompt.</DialogDescription>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-fuchsia-500 to-blue-600 flex items-center justify-center">
+                <Wand2 className="w-3.5 h-3.5" />
+              </span>
+              Supernova Image Studio
+            </DialogTitle>
+            <DialogDescription className="text-white/60">
+              Generate photorealistic imagery or upload your own. Click any image to drop it into the next prompt.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <label className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border p-6 cursor-pointer hover:border-primary/60 transition-colors">
-              <Upload className="w-5 h-5 text-primary" />
-              <span className="text-sm text-white/80">Upload local gallery images</span>
+
+          <div className="space-y-5">
+            {/* Generate */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 space-y-3">
+              <Textarea
+                value={imagePrompt}
+                onChange={(e) => setImagePrompt(e.target.value)}
+                placeholder="A futuristic city at golden hour, cinematic, ultra-detailed…"
+                className="min-h-20 bg-black/40 border-white/10 text-white placeholder:text-white/30 resize-none"
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                {(Object.keys(IMAGE_RATIOS) as ImageRatio[]).map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setImageRatio(r)}
+                    className={`text-[11px] font-mono px-2.5 py-1 rounded-md border transition ${
+                      imageRatio === r
+                        ? "bg-blue-600/20 border-blue-400/50 text-blue-200"
+                        : "border-white/10 text-white/50 hover:text-white hover:border-white/30"
+                    }`}
+                  >
+                    {IMAGE_RATIOS[r].label}
+                  </button>
+                ))}
+                <div className="flex-1" />
+                <Button
+                  onClick={generateImageAsset}
+                  disabled={imageBusy || !imagePrompt.trim()}
+                  className="bg-gradient-to-r from-fuchsia-500 to-blue-600 hover:opacity-90 text-white"
+                >
+                  {imageBusy ? (
+                    <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Rendering…</>
+                  ) : (
+                    <><Wand2 className="w-4 h-4 mr-1.5" /> Generate</>
+                  )}
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {[
+                  "Hero banner, dark gradient, neon glow",
+                  "Minimal product mockup on marble",
+                  "Team portrait, studio lighting",
+                  "Abstract 3d render, pastel colors",
+                ].map((preset) => (
+                  <button
+                    key={preset}
+                    onClick={() => setImagePrompt(preset)}
+                    className="text-[10px] px-2 py-1 rounded-full border border-white/10 text-white/50 hover:text-white hover:border-white/30"
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Upload */}
+            <label className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 cursor-pointer hover:border-blue-400/60 hover:bg-white/[0.04] transition">
+              <Upload className="w-4 h-4 text-blue-400" />
+              <span className="text-sm text-white/70">Drop or upload images from your device</span>
               <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => uploadImages(e.target.files)} />
             </label>
-            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-              <Textarea value={imagePrompt} onChange={(e) => setImagePrompt(e.target.value)} placeholder="Prompt an image/SVG asset for this website..." className="min-h-20 bg-white/5 border-white/10 text-white" />
-              <Button onClick={generateImageAsset} disabled={imageBusy || !imagePrompt.trim()} className="self-end bg-blue-600 hover:bg-blue-500 text-white">
-                {imageBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />} Generate
-              </Button>
-            </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-72 overflow-auto">
-              {gallery.map((src, i) => (
-                <button key={i} onClick={() => applyGalleryToPrompt(src)} className="aspect-square rounded-lg overflow-hidden border border-white/10 hover:border-blue-400 transition-colors">
-                  <img src={src} alt={`Gallery asset ${i + 1}`} className="w-full h-full object-cover" />
-                </button>
-              ))}
+
+            {/* Gallery */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-mono text-white/50">Gallery · {gallery.length}/12</p>
+                {gallery.length > 0 && (
+                  <button
+                    onClick={() => setGallery([])}
+                    className="text-[11px] text-white/40 hover:text-red-400 transition"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+              {gallery.length === 0 ? (
+                <div className="rounded-xl border border-white/5 bg-white/[0.02] py-10 text-center text-xs text-white/30 font-mono">
+                  No images yet — generate or upload above
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-80 overflow-auto pr-1">
+                  {gallery.map((src, i) => (
+                    <div key={i} className="relative group aspect-square rounded-lg overflow-hidden border border-white/10 hover:border-blue-400 transition">
+                      <img src={src} alt={`Asset ${i + 1}`} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/60 transition flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100">
+                        <button
+                          onClick={() => applyGalleryToPrompt(src)}
+                          className="px-2 py-1 rounded-md bg-blue-600 text-white text-[10px] font-medium"
+                        >
+                          Use
+                        </button>
+                        <a
+                          href={src}
+                          download={`supernova-${i + 1}.jpg`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2 py-1 rounded-md bg-white/10 text-white text-[10px] font-medium"
+                        >
+                          <Download className="w-3 h-3" />
+                        </a>
+                        <button
+                          onClick={() => setGallery((prev) => prev.filter((_, j) => j !== i))}
+                          className="px-2 py-1 rounded-md bg-red-600 text-white text-[10px] font-medium"
+                          aria-label="Remove"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </DialogContent>
