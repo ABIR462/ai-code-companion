@@ -93,6 +93,10 @@ export default {
           "0%": { backgroundPosition: "-200% 0" },
           "100%": { backgroundPosition: "200% 0" },
         },
+        "skeleton-shine": {
+          "0%":   { transform: "translateX(0%)" },
+          "100%": { transform: "translateX(200%)" },
+        },
         "fade-up": {
           "0%": { opacity: "0", transform: "translateY(20px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
@@ -104,6 +108,7 @@ export default {
         "pulse-glow": "pulse-glow 3s ease-in-out infinite",
         "float": "float 6s ease-in-out infinite",
         "shimmer": "shimmer 3s linear infinite",
+        "skeleton-shine": "skeleton-shine 1.4s linear infinite",
         "fade-up": "fade-up 0.6s ease-out",
       },
     },
