@@ -27,7 +27,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { collection, addDoc, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/integrations/firebase/config";
-import { completeWebsiteAI } from "@/lib/websiteAI";
+import { completeWebsiteAI, streamWebsiteAI } from "@/lib/websiteAI";
 import { getStoredSambaNovaKey, saveStoredSambaNovaKey } from "@/lib/sambanova";
 
 type ChatTurn = { role: "user" | "assistant"; content: string };
@@ -105,16 +105,27 @@ async function fileToImageDataUrl(file: File, maxSize = 1200, quality = 0.82) {
   return canvas.toDataURL("image/jpeg", quality);
 }
 
-function realisticImageUrl(prompt: string) {
+const IMAGE_RATIOS = {
+  square:    { label: "1:1 Square",    w: 1024, h: 1024 },
+  landscape: { label: "16:9 Landscape", w: 1280, h: 720 },
+  portrait:  { label: "9:16 Portrait",  w: 720, h: 1280 },
+  wide:      { label: "3:2 Wide",       w: 1200, h: 800 },
+} as const;
+type ImageRatio = keyof typeof IMAGE_RATIOS;
+
+function realisticImageUrl(prompt: string, ratio: ImageRatio = "wide") {
+  const { w, h } = IMAGE_RATIOS[ratio];
   const params = new URLSearchParams({
-    width: "1024",
-    height: "768",
+    width: String(w),
+    height: String(h),
     seed: String(Date.now()),
     model: "flux",
     nologo: "true",
     enhance: "true",
   });
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(`${prompt}, realistic, professional photography, high detail, natural lighting`)}?${params.toString()}`;
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(
+    `${prompt}, ultra realistic, professional photography, sharp focus, high detail, natural lighting, 8k`,
+  )}?${params.toString()}`;
 }
 
 export default function Build() {
@@ -138,6 +149,7 @@ export default function Build() {
   const [gallery, setGallery] = useState<string[]>([]);
   const [imagePrompt, setImagePrompt] = useState("");
   const [imageBusy, setImageBusy] = useState(false);
+  const [imageRatio, setImageRatio] = useState<ImageRatio>("wide");
   const [queuedCount, setQueuedCount] = useState(0);
   const [sambaKeyDraft, setSambaKeyDraft] = useState(() => getStoredSambaNovaKey());
   const didAutoRun = useRef(false);
@@ -214,14 +226,42 @@ export default function Build() {
             : `Build this as a complete, polished, fully interactive single-file web app/page. Output ONLY the HTML:\n\n${prompt}${imageContext}`,
         },
       ];
-const result = await completeWebsiteAI(messages, { prefer: "mistral", timeoutMs: 90_000 });
+      // Push a placeholder assistant turn we will mutate as the stream arrives.
+      const streamingHistory: ChatTurn[] = [
+        ...nextHistory,
+        { role: "assistant", content: "▍" },
+      ];
+      historyRef.current = streamingHistory;
+      setHistory(streamingHistory);
+      // Switch to code tab so the user sees tokens streaming in
+      setTab("code");
+
+      const result = await streamWebsiteAI(
+        messages,
+        (_chunk, full) => {
+          // Live update the code panel as tokens arrive
+          const live = ensureHTML(cleanHTML(full));
+          htmlRef.current = live;
+          setHtml(live);
+          // Live update the assistant chat bubble
+          const preview = full.length > 600 ? `…${full.slice(-600)}` : full;
+          const updated: ChatTurn[] = [
+            ...nextHistory,
+            { role: "assistant", content: preview + "▍" },
+          ];
+          historyRef.current = updated;
+          setHistory(updated);
+        },
+        { prefer: "mistral", timeoutMs: 120_000 },
+      );
       let generatedHtml = ensureHTML(cleanHTML(result.content));
       if (!generatedHtml || generatedHtml.length < 80) generatedHtml = isFollowUp ? currentHtml : fallbackHTML(prompt);
       htmlRef.current = generatedHtml;
       setHtml(generatedHtml);
+      setTab("preview");
       const doneHistory: ChatTurn[] = [
         ...nextHistory,
-        { role: "assistant", content: `✓ Updated with ${result.provider}.` },
+        { role: "assistant", content: `✓ Done — ${result.provider} generated ${generatedHtml.length.toLocaleString()} chars of HTML.` },
       ];
       historyRef.current = doneHistory;
       setHistory(doneHistory);
@@ -230,6 +270,9 @@ const result = await completeWebsiteAI(messages, { prefer: "mistral", timeoutMs:
     } catch (e: any) {
       console.error("run() error:", e);
       toast.error(e?.name === "AbortError" ? "AI request timed out" : e?.message ?? "Generation failed");
+      // Drop the placeholder assistant bubble on failure
+      historyRef.current = nextHistory;
+      setHistory(nextHistory);
       if (!currentHtml) {
         const fallback = fallbackHTML(prompt);
         htmlRef.current = fallback;
@@ -300,7 +343,7 @@ const result = await completeWebsiteAI(messages, { prefer: "mistral", timeoutMs:
     if (!imagePrompt.trim()) return;
     setImageBusy(true);
     try {
-      const src = realisticImageUrl(imagePrompt);
+      const src = realisticImageUrl(imagePrompt, imageRatio);
       await new Promise<void>((resolve, reject) => {
         const img = new Image();
         img.onload = () => resolve();
@@ -308,7 +351,6 @@ const result = await completeWebsiteAI(messages, { prefer: "mistral", timeoutMs:
         img.src = src;
       });
       setGallery((prev) => [src, ...prev].slice(0, 12));
-      setImagePrompt("");
       toast.success("Image generated");
     } catch (error: any) {
       toast.error(error?.message ?? "Image generation failed");
