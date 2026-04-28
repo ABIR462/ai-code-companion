@@ -249,7 +249,7 @@ export default function Supernova() {
                     {job.status === "pending" && (
                       <div className="absolute inset-0 overflow-hidden">
                         <div className="absolute inset-0 bg-gradient-to-br from-white/5 via-white/[0.08] to-white/5" />
-                        <div className="absolute inset-y-0 -left-full w-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_1.4s_infinite]" />
+                        <div className="absolute inset-y-0 -left-full w-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-skeleton-shine" />
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
                           <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
                           <p className="text-[11px] font-mono text-white/60">
