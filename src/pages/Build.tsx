@@ -17,6 +17,7 @@ import {
   Upload,
   Wand2,
   Settings,
+  X,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -27,7 +28,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { collection, addDoc, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/integrations/firebase/config";
-import { completeWebsiteAI } from "@/lib/websiteAI";
+import { completeWebsiteAI, streamWebsiteAI } from "@/lib/websiteAI";
 import { getStoredSambaNovaKey, saveStoredSambaNovaKey } from "@/lib/sambanova";
 
 type ChatTurn = { role: "user" | "assistant"; content: string };
@@ -105,16 +106,27 @@ async function fileToImageDataUrl(file: File, maxSize = 1200, quality = 0.82) {
   return canvas.toDataURL("image/jpeg", quality);
 }
 
-function realisticImageUrl(prompt: string) {
+const IMAGE_RATIOS = {
+  square:    { label: "1:1 Square",    w: 1024, h: 1024 },
+  landscape: { label: "16:9 Landscape", w: 1280, h: 720 },
+  portrait:  { label: "9:16 Portrait",  w: 720, h: 1280 },
+  wide:      { label: "3:2 Wide",       w: 1200, h: 800 },
+} as const;
+type ImageRatio = keyof typeof IMAGE_RATIOS;
+
+function realisticImageUrl(prompt: string, ratio: ImageRatio = "wide") {
+  const { w, h } = IMAGE_RATIOS[ratio];
   const params = new URLSearchParams({
-    width: "1024",
-    height: "768",
+    width: String(w),
+    height: String(h),
     seed: String(Date.now()),
     model: "flux",
     nologo: "true",
     enhance: "true",
   });
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(`${prompt}, realistic, professional photography, high detail, natural lighting`)}?${params.toString()}`;
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(
+    `${prompt}, ultra realistic, professional photography, sharp focus, high detail, natural lighting, 8k`,
+  )}?${params.toString()}`;
 }
 
 export default function Build() {
@@ -138,6 +150,7 @@ export default function Build() {
   const [gallery, setGallery] = useState<string[]>([]);
   const [imagePrompt, setImagePrompt] = useState("");
   const [imageBusy, setImageBusy] = useState(false);
+  const [imageRatio, setImageRatio] = useState<ImageRatio>("wide");
   const [queuedCount, setQueuedCount] = useState(0);
   const [sambaKeyDraft, setSambaKeyDraft] = useState(() => getStoredSambaNovaKey());
   const didAutoRun = useRef(false);
@@ -214,14 +227,42 @@ export default function Build() {
             : `Build this as a complete, polished, fully interactive single-file web app/page. Output ONLY the HTML:\n\n${prompt}${imageContext}`,
         },
       ];
-const result = await completeWebsiteAI(messages, { prefer: "mistral", timeoutMs: 90_000 });
+      // Push a placeholder assistant turn we will mutate as the stream arrives.
+      const streamingHistory: ChatTurn[] = [
+        ...nextHistory,
+        { role: "assistant", content: "▍" },
+      ];
+      historyRef.current = streamingHistory;
+      setHistory(streamingHistory);
+      // Switch to code tab so the user sees tokens streaming in
+      setTab("code");
+
+      const result = await streamWebsiteAI(
+        messages,
+        (_chunk, full) => {
+          // Live update the code panel as tokens arrive
+          const live = ensureHTML(cleanHTML(full));
+          htmlRef.current = live;
+          setHtml(live);
+          // Live update the assistant chat bubble
+          const preview = full.length > 600 ? `…${full.slice(-600)}` : full;
+          const updated: ChatTurn[] = [
+            ...nextHistory,
+            { role: "assistant", content: preview + "▍" },
+          ];
+          historyRef.current = updated;
+          setHistory(updated);
+        },
+        { prefer: "mistral", timeoutMs: 120_000 },
+      );
       let generatedHtml = ensureHTML(cleanHTML(result.content));
       if (!generatedHtml || generatedHtml.length < 80) generatedHtml = isFollowUp ? currentHtml : fallbackHTML(prompt);
       htmlRef.current = generatedHtml;
       setHtml(generatedHtml);
+      setTab("preview");
       const doneHistory: ChatTurn[] = [
         ...nextHistory,
-        { role: "assistant", content: `✓ Updated with ${result.provider}.` },
+        { role: "assistant", content: `✓ Done — ${result.provider} generated ${generatedHtml.length.toLocaleString()} chars of HTML.` },
       ];
       historyRef.current = doneHistory;
       setHistory(doneHistory);
@@ -230,6 +271,9 @@ const result = await completeWebsiteAI(messages, { prefer: "mistral", timeoutMs:
     } catch (e: any) {
       console.error("run() error:", e);
       toast.error(e?.name === "AbortError" ? "AI request timed out" : e?.message ?? "Generation failed");
+      // Drop the placeholder assistant bubble on failure
+      historyRef.current = nextHistory;
+      setHistory(nextHistory);
       if (!currentHtml) {
         const fallback = fallbackHTML(prompt);
         htmlRef.current = fallback;
@@ -300,7 +344,7 @@ const result = await completeWebsiteAI(messages, { prefer: "mistral", timeoutMs:
     if (!imagePrompt.trim()) return;
     setImageBusy(true);
     try {
-      const src = realisticImageUrl(imagePrompt);
+      const src = realisticImageUrl(imagePrompt, imageRatio);
       await new Promise<void>((resolve, reject) => {
         const img = new Image();
         img.onload = () => resolve();
@@ -308,7 +352,6 @@ const result = await completeWebsiteAI(messages, { prefer: "mistral", timeoutMs:
         img.src = src;
       });
       setGallery((prev) => [src, ...prev].slice(0, 12));
-      setImagePrompt("");
       toast.success("Image generated");
     } catch (error: any) {
       toast.error(error?.message ?? "Image generation failed");
@@ -626,29 +669,130 @@ const result = await completeWebsiteAI(messages, { prefer: "mistral", timeoutMs:
       )}
 
       <Dialog open={mediaOpen} onOpenChange={setMediaOpen}>
-        <DialogContent className="glass-strong max-w-2xl">
+        <DialogContent className="max-w-3xl bg-zinc-950 border-white/10 text-white">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><ImageIcon className="w-4 h-4 text-primary" /> Image studio</DialogTitle>
-            <DialogDescription>Upload local images or generate realistic images for the current website prompt.</DialogDescription>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-fuchsia-500 to-blue-600 flex items-center justify-center">
+                <Wand2 className="w-3.5 h-3.5" />
+              </span>
+              Supernova Image Studio
+            </DialogTitle>
+            <DialogDescription className="text-white/60">
+              Generate photorealistic imagery or upload your own. Click any image to drop it into the next prompt.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <label className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border p-6 cursor-pointer hover:border-primary/60 transition-colors">
-              <Upload className="w-5 h-5 text-primary" />
-              <span className="text-sm text-white/80">Upload local gallery images</span>
+
+          <div className="space-y-5">
+            {/* Generate */}
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 space-y-3">
+              <Textarea
+                value={imagePrompt}
+                onChange={(e) => setImagePrompt(e.target.value)}
+                placeholder="A futuristic city at golden hour, cinematic, ultra-detailed…"
+                className="min-h-20 bg-black/40 border-white/10 text-white placeholder:text-white/30 resize-none"
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                {(Object.keys(IMAGE_RATIOS) as ImageRatio[]).map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setImageRatio(r)}
+                    className={`text-[11px] font-mono px-2.5 py-1 rounded-md border transition ${
+                      imageRatio === r
+                        ? "bg-blue-600/20 border-blue-400/50 text-blue-200"
+                        : "border-white/10 text-white/50 hover:text-white hover:border-white/30"
+                    }`}
+                  >
+                    {IMAGE_RATIOS[r].label}
+                  </button>
+                ))}
+                <div className="flex-1" />
+                <Button
+                  onClick={generateImageAsset}
+                  disabled={imageBusy || !imagePrompt.trim()}
+                  className="bg-gradient-to-r from-fuchsia-500 to-blue-600 hover:opacity-90 text-white"
+                >
+                  {imageBusy ? (
+                    <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Rendering…</>
+                  ) : (
+                    <><Wand2 className="w-4 h-4 mr-1.5" /> Generate</>
+                  )}
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {[
+                  "Hero banner, dark gradient, neon glow",
+                  "Minimal product mockup on marble",
+                  "Team portrait, studio lighting",
+                  "Abstract 3d render, pastel colors",
+                ].map((preset) => (
+                  <button
+                    key={preset}
+                    onClick={() => setImagePrompt(preset)}
+                    className="text-[10px] px-2 py-1 rounded-full border border-white/10 text-white/50 hover:text-white hover:border-white/30"
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Upload */}
+            <label className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 cursor-pointer hover:border-blue-400/60 hover:bg-white/[0.04] transition">
+              <Upload className="w-4 h-4 text-blue-400" />
+              <span className="text-sm text-white/70">Drop or upload images from your device</span>
               <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => uploadImages(e.target.files)} />
             </label>
-            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-              <Textarea value={imagePrompt} onChange={(e) => setImagePrompt(e.target.value)} placeholder="Prompt an image/SVG asset for this website..." className="min-h-20 bg-white/5 border-white/10 text-white" />
-              <Button onClick={generateImageAsset} disabled={imageBusy || !imagePrompt.trim()} className="self-end bg-blue-600 hover:bg-blue-500 text-white">
-                {imageBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />} Generate
-              </Button>
-            </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-72 overflow-auto">
-              {gallery.map((src, i) => (
-                <button key={i} onClick={() => applyGalleryToPrompt(src)} className="aspect-square rounded-lg overflow-hidden border border-white/10 hover:border-blue-400 transition-colors">
-                  <img src={src} alt={`Gallery asset ${i + 1}`} className="w-full h-full object-cover" />
-                </button>
-              ))}
+
+            {/* Gallery */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-mono text-white/50">Gallery · {gallery.length}/12</p>
+                {gallery.length > 0 && (
+                  <button
+                    onClick={() => setGallery([])}
+                    className="text-[11px] text-white/40 hover:text-red-400 transition"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+              {gallery.length === 0 ? (
+                <div className="rounded-xl border border-white/5 bg-white/[0.02] py-10 text-center text-xs text-white/30 font-mono">
+                  No images yet — generate or upload above
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-80 overflow-auto pr-1">
+                  {gallery.map((src, i) => (
+                    <div key={i} className="relative group aspect-square rounded-lg overflow-hidden border border-white/10 hover:border-blue-400 transition">
+                      <img src={src} alt={`Asset ${i + 1}`} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/60 transition flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100">
+                        <button
+                          onClick={() => applyGalleryToPrompt(src)}
+                          className="px-2 py-1 rounded-md bg-blue-600 text-white text-[10px] font-medium"
+                        >
+                          Use
+                        </button>
+                        <a
+                          href={src}
+                          download={`supernova-${i + 1}.jpg`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2 py-1 rounded-md bg-white/10 text-white text-[10px] font-medium"
+                        >
+                          <Download className="w-3 h-3" />
+                        </a>
+                        <button
+                          onClick={() => setGallery((prev) => prev.filter((_, j) => j !== i))}
+                          className="px-2 py-1 rounded-md bg-red-600 text-white text-[10px] font-medium"
+                          aria-label="Remove"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </DialogContent>
