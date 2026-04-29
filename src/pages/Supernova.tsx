@@ -1,341 +1,728 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   Download,
+  Image as ImageIcon,
   Loader2,
+  Menu,
+  MessageSquarePlus,
+  Paperclip,
+  Pencil,
+  Plus,
   RefreshCw,
+  Send,
   Sparkles,
-  Upload,
+  Trash2,
+  User as UserIcon,
   Wand2,
   X,
-  ImageOff,
+  StopCircle,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
+import {
+  appendMessage,
+  createConversation,
+  deleteConversation,
+  renameConversation,
+  subscribeConversations,
+  subscribeMessages,
+  SupernovaConversation,
+  SupernovaMessage,
+} from "@/lib/supernovaStore";
+import {
+  ChatMessage,
+  ChatPart,
+  detectImageIntent,
+  fileToDataUrl,
+  generateImage,
+  ImageRatio,
+  ImageStyle,
+  streamChat,
+  chatOnce,
+} from "@/lib/supernovaChat";
 
-const IMAGE_RATIOS = {
-  square:    { label: "1:1 Square",     w: 1024, h: 1024 },
-  landscape: { label: "16:9 Landscape", w: 1280, h: 720  },
-  portrait:  { label: "9:16 Portrait",  w: 720,  h: 1280 },
-  wide:      { label: "3:2 Wide",       w: 1200, h: 800  },
-} as const;
-type ImageRatio = keyof typeof IMAGE_RATIOS;
-
-type ImageJob = {
-  id: string;
-  prompt: string;
-  ratio: ImageRatio;
-  status: "pending" | "ready" | "error";
-  src?: string;
-  error?: string;
-  startedAt: number;
-};
-
-const PRESETS = [
-  "Hero banner, dark gradient, neon glow, cinematic",
-  "Minimal product mockup on marble surface, studio light",
-  "Diverse team portrait, soft window light, candid",
-  "Abstract 3D render, pastel colors, glossy shapes",
-  "Aerial cityscape at golden hour, ultra realistic",
-  "Macro food photography, fresh, vibrant",
+const STYLES: { id: ImageStyle; label: string }[] = [
+  { id: "auto", label: "Auto" },
+  { id: "realistic", label: "Realistic" },
+  { id: "anime", label: "Anime" },
+  { id: "illustration", label: "Illustration" },
+  { id: "3d", label: "3D" },
+  { id: "pixel", label: "Pixel" },
+  { id: "logo", label: "Logo" },
+  { id: "sketch", label: "Sketch" },
+  { id: "watercolor", label: "Watercolor" },
+  { id: "cyberpunk", label: "Cyberpunk" },
 ];
 
-function realisticImageUrl(prompt: string, ratio: ImageRatio, seed: number) {
-  const { w, h } = IMAGE_RATIOS[ratio];
-  const params = new URLSearchParams({
-    width: String(w),
-    height: String(h),
-    seed: String(seed),
-    model: "flux",
-    nologo: "true",
-    enhance: "true",
-  });
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(
-    `${prompt}, ultra realistic, professional photography, sharp focus, high detail, natural lighting, 8k`,
-  )}?${params.toString()}`;
-}
+const RATIOS: ImageRatio[] = ["1:1", "16:9", "9:16", "3:2", "2:3", "4:3"];
 
-function loadImage(src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve();
-    img.onerror = () => reject(new Error("Image model failed to render — try again"));
-    img.src = src;
-  });
-}
+const SUGGESTED = [
+  { icon: "🎨", text: "Create a cinematic poster of a lone astronaut on a neon planet" },
+  { icon: "🐉", text: "Anime illustration of a friendly dragon over a mountain village" },
+  { icon: "🖼️", text: "Minimal vector logo for a coffee brand called 'North'" },
+  { icon: "💡", text: "Explain quantum entanglement in 3 short paragraphs" },
+];
 
-async function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error("Could not read file"));
-    reader.readAsDataURL(file);
-  });
+function autoTitle(text: string) {
+  const t = text.replace(/\s+/g, " ").trim();
+  return t.length > 48 ? t.slice(0, 45) + "…" : t || "New chat";
 }
 
 export default function Supernova() {
-  const [prompt, setPrompt] = useState("");
-  const [ratio, setRatio] = useState<ImageRatio>("wide");
-  const [jobs, setJobs] = useState<ImageJob[]>([]);
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
 
-  const updateJob = (id: string, patch: Partial<ImageJob>) =>
-    setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, ...patch } : j)));
+  const [convos, setConvos] = useState<SupernovaConversation[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<SupernovaMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  const [attachments, setAttachments] = useState<string[]>([]); // data URLs
+  const [imageMode, setImageMode] = useState(false);
+  const [style, setStyle] = useState<ImageStyle>("auto");
+  const [ratio, setRatio] = useState<ImageRatio>("1:1");
+  const [busy, setBusy] = useState(false);
+  const [streamText, setStreamText] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [renameOpen, setRenameOpen] = useState<{ id: string; title: string } | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const startJob = async (job: ImageJob) => {
-    const seed = Date.now() + Math.floor(Math.random() * 1000);
-    const src = realisticImageUrl(job.prompt, job.ratio, seed);
-    try {
-      await loadImage(src);
-      updateJob(job.id, { status: "ready", src, error: undefined });
-    } catch (err: any) {
-      updateJob(job.id, { status: "error", error: err?.message ?? "Failed" });
+  // ── Subscribe to conversations
+  useEffect(() => {
+    if (!user) return;
+    const unsub = subscribeConversations(user.uid, (rows) => {
+      setConvos(rows);
+      if (!activeId && rows.length > 0) setActiveId(rows[0].id);
+    });
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  // ── Subscribe to messages of active conversation
+  useEffect(() => {
+    if (!user || !activeId) {
+      setMessages([]);
+      return;
     }
+    const unsub = subscribeMessages(user.uid, activeId, setMessages);
+    return unsub;
+  }, [user, activeId]);
+
+  // ── Auto scroll
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, streamText]);
+
+  // ── Mobile: collapse sidebar
+  useEffect(() => {
+    if (window.innerWidth < 768) setSidebarOpen(false);
+  }, []);
+
+  const activeConvo = useMemo(
+    () => convos.find((c) => c.id === activeId) ?? null,
+    [convos, activeId],
+  );
+
+  const newChat = async () => {
+    if (!user) return;
+    const id = await createConversation(user.uid, "New chat");
+    setActiveId(id);
+    setMessages([]);
+    setDraft("");
+    setAttachments([]);
+    if (window.innerWidth < 768) setSidebarOpen(false);
   };
 
-  const generate = () => {
-    const text = prompt.trim();
-    if (!text) return;
-    const job: ImageJob = {
-      id: Math.random().toString(36).slice(2, 9),
-      prompt: text,
-      ratio,
-      status: "pending",
-      startedAt: Date.now(),
-    };
-    setJobs((prev) => [job, ...prev].slice(0, 16));
-    startJob(job);
-    toast.message("Rendering image…");
-  };
-
-  const retry = (id: string) => {
-    const job = jobs.find((j) => j.id === id);
-    if (!job) return;
-    updateJob(id, { status: "pending", error: undefined, startedAt: Date.now() });
-    startJob({ ...job, status: "pending" });
-  };
-
-  const remove = (id: string) =>
-    setJobs((prev) => prev.filter((j) => j.id !== id));
-
-  const upload = async (files: FileList | null) => {
+  const onAttach = async (files: FileList | null) => {
     if (!files?.length) return;
     try {
-      const items = await Promise.all(
-        Array.from(files)
-          .filter((f) => f.type.startsWith("image/"))
-          .slice(0, 8)
-          .map(async (f) => ({
-            id: Math.random().toString(36).slice(2, 9),
-            prompt: f.name,
-            ratio,
-            status: "ready" as const,
-            src: await fileToDataUrl(f),
-            startedAt: Date.now(),
-          })),
-      );
-      setJobs((prev) => [...items, ...prev].slice(0, 16));
-      toast.success(`${items.length} uploaded`);
+      const next: string[] = [];
+      for (const f of Array.from(files).filter((f) => f.type.startsWith("image/")).slice(0, 4)) {
+        if (f.size > 8 * 1024 * 1024) {
+          toast.error(`${f.name} is larger than 8 MB`);
+          continue;
+        }
+        next.push(await fileToDataUrl(f));
+      }
+      setAttachments((prev) => [...prev, ...next].slice(0, 4));
     } catch (e: any) {
-      toast.error(e?.message ?? "Upload failed");
+      toast.error(e?.message ?? "Could not read file");
     }
   };
 
-  const aspectClass = (r: ImageRatio) =>
-    r === "square" ? "aspect-square"
-      : r === "landscape" ? "aspect-video"
-      : r === "portrait" ? "aspect-[9/16]"
-      : "aspect-[3/2]";
+  const removeAttachment = (i: number) =>
+    setAttachments((prev) => prev.filter((_, idx) => idx !== i));
+
+  const stop = () => {
+    abortRef.current?.abort();
+  };
+
+  const send = async () => {
+    if (!user) return;
+    const text = draft.trim();
+    if (!text && attachments.length === 0) return;
+    if (busy) return;
+
+    // ensure conversation exists
+    let cid = activeId;
+    if (!cid) {
+      cid = await createConversation(user.uid, autoTitle(text));
+      setActiveId(cid);
+    } else if (messages.length === 0 && text) {
+      renameConversation(user.uid, cid, autoTitle(text)).catch(() => {});
+    }
+
+    const userImages = attachments.slice();
+    const intent = imageMode ? { isImage: true, prompt: text } : detectImageIntent(text);
+
+    // Persist user message
+    await appendMessage(user.uid, cid, {
+      role: "user",
+      kind: intent.isImage ? "image" : "text",
+      content: text,
+      images: userImages,
+      prompt: intent.isImage ? intent.prompt : undefined,
+    });
+
+    setDraft("");
+    setAttachments([]);
+    setBusy(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      if (intent.isImage) {
+        // ── Image generation flow ──
+        const placeholderText = `Generating · ${style} · ${ratio}`;
+        const images = await generateImage({
+          prompt: intent.prompt || "an image",
+          style,
+          ratio,
+          count: 1,
+          signal: controller.signal,
+        });
+        // Friendly caption via Mistral (best-effort, non-blocking)
+        let caption = "";
+        try {
+          caption = await chatOnce(
+            [
+              { role: "system", content: "You are Supernova, a concise image studio assistant. Reply in 1-2 sentences describing what was generated." },
+              { role: "user", content: `Image prompt: "${intent.prompt}". Style: ${style}. Ratio: ${ratio}.` },
+            ],
+            { signal: controller.signal, maxTokens: 120 },
+          );
+        } catch { /* ignore */ }
+
+        await appendMessage(user.uid, cid, {
+          role: "assistant",
+          kind: "image",
+          content: caption || `Here is your ${style} image.`,
+          images: images.map((i) => i.url),
+          prompt: intent.prompt,
+        });
+        toast.success("Image ready");
+        void placeholderText;
+      } else {
+        // ── Text / vision chat flow with streaming ──
+        const history: ChatMessage[] = [
+          {
+            role: "system",
+            content:
+              "You are Supernova, a friendly multimodal assistant. Answer clearly using markdown. When the user attaches images, describe and reason about them.",
+          },
+          ...messages.map<ChatMessage>((m) => {
+            if (m.role === "assistant") {
+              return { role: "assistant", content: m.content };
+            }
+            const parts: ChatPart[] = [];
+            if (m.content) parts.push({ type: "text", text: m.content });
+            (m.images ?? []).forEach((url) => parts.push({ type: "image_url", image_url: { url } }));
+            return { role: "user", content: parts.length > 1 || (m.images && m.images.length) ? parts : m.content };
+          }),
+        ];
+
+        const parts: ChatPart[] = [];
+        if (text) parts.push({ type: "text", text });
+        userImages.forEach((url) => parts.push({ type: "image_url", image_url: { url } }));
+        history.push({ role: "user", content: parts.length > 1 || userImages.length ? parts : text });
+
+        setStreamText("▍");
+        const final = await streamChat(
+          history,
+          (_d, full) => setStreamText(full + "▍"),
+          { signal: controller.signal, maxTokens: 2048 },
+        );
+        setStreamText("");
+        await appendMessage(user.uid, cid, {
+          role: "assistant",
+          kind: "text",
+          content: final || "(empty response)",
+        });
+      }
+    } catch (e: any) {
+      const aborted = /aborted/i.test(String(e?.message)) || e?.name === "AbortError";
+      if (!aborted) {
+        console.error(e);
+        toast.error(e?.message ?? "Something went wrong");
+        await appendMessage(user.uid, cid, {
+          role: "assistant",
+          kind: "text",
+          content: `⚠️ ${e?.message ?? "Failed to respond"}`,
+        });
+      } else {
+        toast.message("Stopped");
+      }
+    } finally {
+      setBusy(false);
+      setStreamText("");
+      abortRef.current = null;
+    }
+  };
+
+  const regenerateImage = async (msg: SupernovaMessage) => {
+    if (!user || !activeId || !msg.prompt) return;
+    setBusy(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      const images = await generateImage({
+        prompt: msg.prompt,
+        style,
+        ratio,
+        signal: controller.signal,
+      });
+      await appendMessage(user.uid, activeId, {
+        role: "assistant",
+        kind: "image",
+        content: `Re-rolled with ${style} · ${ratio}`,
+        images: images.map((i) => i.url),
+        prompt: msg.prompt,
+      });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed");
+    } finally {
+      setBusy(false);
+      abortRef.current = null;
+    }
+  };
+
+  const removeChat = async (id: string) => {
+    if (!user) return;
+    if (!confirm("Delete this conversation? This cannot be undone.")) return;
+    await deleteConversation(user.uid, id);
+    if (activeId === id) {
+      setActiveId(null);
+      setMessages([]);
+    }
+    toast.success("Deleted");
+  };
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black text-white">
+        <Button onClick={() => navigate("/auth")}>Sign in to use Supernova</Button>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      {/* Header */}
-      <header className="sticky top-0 z-20 backdrop-blur bg-black/60 border-b border-white/10">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link to="/build" className="flex items-center gap-2 text-sm text-white/70 hover:text-white">
-            <ArrowLeft className="w-4 h-4" /> Back to IDE
+    <div className="h-screen flex bg-zinc-950 text-zinc-100">
+      {/* ─── Sidebar ─── */}
+      <aside
+        className={`${
+          sidebarOpen ? "w-72" : "w-0"
+        } shrink-0 transition-[width] duration-200 overflow-hidden border-r border-white/5 bg-zinc-950/95 backdrop-blur flex flex-col`}
+      >
+        <div className="p-3 flex items-center gap-2 border-b border-white/5">
+          <Link to="/" className="text-zinc-400 hover:text-white" aria-label="Home">
+            <ArrowLeft className="w-4 h-4" />
           </Link>
-          <div className="flex items-center gap-2">
-            <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-fuchsia-500 to-blue-600 flex items-center justify-center">
+          <div className="flex items-center gap-2 flex-1">
+            <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-fuchsia-500 to-blue-500 flex items-center justify-center">
               <Wand2 className="w-3.5 h-3.5" />
             </span>
-            <h1 className="font-semibold tracking-wide">Supernova Image Studio</h1>
+            <span className="font-semibold text-sm tracking-wide">Supernova</span>
           </div>
-          <div className="w-24" />
         </div>
-      </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
-        {/* Composer */}
-        <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
-          <Textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe the image — e.g. 'A futuristic city at golden hour, cinematic, ultra-detailed'"
-            className="min-h-24 bg-black/40 border-white/10 text-white placeholder:text-white/30 resize-none"
-          />
+        <div className="p-3">
+          <Button
+            onClick={newChat}
+            className="w-full justify-start gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-100"
+          >
+            <MessageSquarePlus className="w-4 h-4" /> New chat
+          </Button>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {(Object.keys(IMAGE_RATIOS) as ImageRatio[]).map((r) => (
-              <button
-                key={r}
-                onClick={() => setRatio(r)}
-                className={`text-[11px] font-mono px-2.5 py-1 rounded-md border transition ${
-                  ratio === r
-                    ? "bg-blue-600/20 border-blue-400/50 text-blue-200"
-                    : "border-white/10 text-white/50 hover:text-white hover:border-white/30"
+        <div className="px-2 pb-2 text-[10px] uppercase tracking-wider text-zinc-500 font-mono">
+          Recent · {convos.length}
+        </div>
+
+        <nav className="flex-1 overflow-auto px-2 space-y-0.5">
+          {convos.length === 0 ? (
+            <p className="text-xs text-zinc-500 px-2 py-4 text-center">
+              Your chats will appear here
+            </p>
+          ) : (
+            convos.map((c) => (
+              <div
+                key={c.id}
+                className={`group rounded-lg flex items-center gap-1 ${
+                  activeId === c.id ? "bg-white/10" : "hover:bg-white/5"
                 }`}
               >
-                {IMAGE_RATIOS[r].label}
-              </button>
-            ))}
-            <div className="flex-1" />
-            <label className="cursor-pointer text-xs px-3 py-1.5 rounded-md border border-white/10 text-white/70 hover:text-white hover:border-white/30 inline-flex items-center gap-1.5">
-              <Upload className="w-3.5 h-3.5" /> Upload
-              <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => upload(e.target.files)} />
-            </label>
-            <Button
-              onClick={generate}
-              disabled={!prompt.trim()}
-              className="bg-gradient-to-r from-fuchsia-500 to-blue-600 hover:opacity-90 text-white"
-            >
-              <Sparkles className="w-4 h-4 mr-1.5" /> Generate
-            </Button>
-          </div>
-
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {PRESETS.map((p) => (
-              <button
-                key={p}
-                onClick={() => setPrompt(p)}
-                className="text-[10px] px-2 py-1 rounded-full border border-white/10 text-white/50 hover:text-white hover:border-white/30"
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* Gallery */}
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-mono text-white/50">
-              Renders · {jobs.length}
-            </p>
-            {jobs.length > 0 && (
-              <button
-                onClick={() => setJobs([])}
-                className="text-[11px] text-white/40 hover:text-red-400"
-              >
-                Clear all
-              </button>
-            )}
-          </div>
-
-          {jobs.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] py-20 text-center text-sm text-white/40 font-mono">
-              No renders yet — describe an image above
-            </div>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {jobs.map((job) => (
-                <article
-                  key={job.id}
-                  className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col"
+                <button
+                  onClick={() => setActiveId(c.id)}
+                  className="flex-1 text-left text-sm px-3 py-2 truncate text-zinc-200"
                 >
-                  <div className={`relative ${aspectClass(job.ratio)} bg-black`}>
-                    {/* Skeleton */}
-                    {job.status === "pending" && (
-                      <div className="absolute inset-0 overflow-hidden">
-                        <div className="absolute inset-0 bg-gradient-to-br from-white/5 via-white/[0.08] to-white/5" />
-                        <div className="absolute inset-y-0 -left-full w-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-skeleton-shine" />
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                          <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
-                          <p className="text-[11px] font-mono text-white/60">
-                            Rendering · {Math.max(1, Math.round((Date.now() - job.startedAt) / 1000))}s
-                          </p>
-                        </div>
-                      </div>
-                    )}
+                  {c.title}
+                </button>
+                <button
+                  onClick={() => setRenameOpen({ id: c.id, title: c.title })}
+                  className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-white p-1.5"
+                  title="Rename"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => removeChat(c.id)}
+                  className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-400 p-1.5 mr-1"
+                  title="Delete"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))
+          )}
+        </nav>
 
-                    {/* Error */}
-                    {job.status === "error" && (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center bg-red-950/20">
-                        <ImageOff className="w-7 h-7 text-red-400" />
-                        <p className="text-xs text-red-200/90 leading-snug">
-                          {job.error ?? "Render failed"}
-                        </p>
-                        <Button
-                          size="sm"
-                          onClick={() => retry(job.id)}
-                          className="bg-red-600 hover:bg-red-500 text-white h-7 text-xs"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5 mr-1" /> Retry
-                        </Button>
-                      </div>
-                    )}
-
-                    {/* Ready */}
-                    {job.status === "ready" && job.src && (
-                      <img
-                        src={job.src}
-                        alt={job.prompt}
-                        className="absolute inset-0 w-full h-full object-cover"
-                      />
-                    )}
-
-                    {/* Remove */}
-                    <button
-                      onClick={() => remove(job.id)}
-                      className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 backdrop-blur border border-white/10 text-white/80 hover:text-white hover:bg-black/80 flex items-center justify-center"
-                      aria-label="Remove"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  <div className="p-3 space-y-2">
-                    <p className="text-xs text-white/70 line-clamp-2 min-h-[2.25rem]">
-                      {job.prompt}
-                    </p>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-mono text-white/40">
-                        {IMAGE_RATIOS[job.ratio].label}
-                      </span>
-                      <div className="flex items-center gap-1">
-                        {job.status === "ready" && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => retry(job.id)}
-                              className="h-7 px-2 text-xs text-white/70 hover:text-white"
-                              title="Re-roll"
-                            >
-                              <RefreshCw className="w-3.5 h-3.5" />
-                            </Button>
-                            <a
-                              href={job.src}
-                              download={`supernova-${job.id}.jpg`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="h-7 px-2 text-xs text-white/70 hover:text-white inline-flex items-center"
-                              title="Download"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </a>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </article>
-              ))}
+        <div className="p-3 border-t border-white/5 flex items-center gap-2">
+          {user.photoURL ? (
+            <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full" />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
+              <UserIcon className="w-4 h-4" />
             </div>
           )}
-        </section>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs truncate">{user.displayName || user.email}</p>
+            <button
+              onClick={() => signOut().then(() => navigate("/"))}
+              className="text-[10px] text-zinc-500 hover:text-zinc-300"
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* ─── Main ─── */}
+      <main className="flex-1 flex flex-col min-w-0">
+        {/* Top bar */}
+        <header className="h-12 px-3 flex items-center gap-2 border-b border-white/5">
+          <button
+            onClick={() => setSidebarOpen((s) => !s)}
+            className="p-2 rounded-md hover:bg-white/5 text-zinc-400 hover:text-white"
+            aria-label="Toggle sidebar"
+          >
+            <Menu className="w-4 h-4" />
+          </button>
+          <h1 className="text-sm font-medium truncate flex-1">
+            {activeConvo?.title ?? "New chat"}
+          </h1>
+          <Link
+            to="/build"
+            className="text-xs text-zinc-400 hover:text-white px-2 py-1 rounded-md hover:bg-white/5"
+          >
+            Open IDE
+          </Link>
+        </header>
+
+        {/* Messages */}
+        <div ref={scrollRef} className="flex-1 overflow-auto">
+          <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+            {messages.length === 0 && !streamText ? (
+              <div className="flex flex-col items-center justify-center text-center pt-16 pb-8">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-fuchsia-500 to-blue-500 flex items-center justify-center mb-4">
+                  <Sparkles className="w-7 h-7" />
+                </div>
+                <h2 className="text-3xl font-semibold tracking-tight">
+                  Hello{user.displayName ? `, ${user.displayName.split(" ")[0]}` : ""}
+                </h2>
+                <p className="text-zinc-400 mt-2">How can I help you today?</p>
+
+                <div className="grid sm:grid-cols-2 gap-2 mt-8 w-full max-w-2xl">
+                  {SUGGESTED.map((s) => (
+                    <button
+                      key={s.text}
+                      onClick={() => setDraft(s.text)}
+                      className="text-left p-3 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] transition"
+                    >
+                      <span className="text-base mr-2">{s.icon}</span>
+                      <span className="text-sm text-zinc-200">{s.text}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              messages.map((m) => <MessageBubble key={m.id} msg={m} onRerollImage={() => regenerateImage(m)} />)
+            )}
+
+            {streamText && (
+              <MessageBubble
+                msg={{ role: "assistant", kind: "text", content: streamText }}
+                streaming
+              />
+            )}
+
+            {busy && !streamText && (
+              <div className="flex items-center gap-2 text-zinc-400 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin" /> Thinking…
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Composer */}
+        <div className="border-t border-white/5 bg-zinc-950">
+          <div className="max-w-3xl mx-auto px-4 py-3 space-y-2">
+            {/* Mode + style row */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setImageMode((v) => !v)}
+                className={`text-[11px] font-mono px-2.5 py-1 rounded-md border transition inline-flex items-center gap-1.5 ${
+                  imageMode
+                    ? "bg-fuchsia-500/15 border-fuchsia-400/40 text-fuchsia-200"
+                    : "border-white/10 text-zinc-400 hover:text-white hover:border-white/30"
+                }`}
+                title="Toggle image generation mode"
+              >
+                <ImageIcon className="w-3.5 h-3.5" />
+                {imageMode ? "Image mode" : "Chat"}
+              </button>
+
+              {imageMode && (
+                <>
+                  <select
+                    value={style}
+                    onChange={(e) => setStyle(e.target.value as ImageStyle)}
+                    className="text-[11px] bg-zinc-900 border border-white/10 rounded-md px-2 py-1 text-zinc-200"
+                  >
+                    {STYLES.map((s) => (
+                      <option key={s.id} value={s.id}>{s.label}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={ratio}
+                    onChange={(e) => setRatio(e.target.value as ImageRatio)}
+                    className="text-[11px] bg-zinc-900 border border-white/10 rounded-md px-2 py-1 text-zinc-200 font-mono"
+                  >
+                    {RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </>
+              )}
+
+              {!imageMode && (
+                <span className="text-[10px] text-zinc-500 font-mono">
+                  Tip: type <span className="text-zinc-300">/image a sunset</span> or attach a photo
+                </span>
+              )}
+            </div>
+
+            {/* Attachments preview */}
+            {attachments.length > 0 && (
+              <div className="flex gap-2 flex-wrap">
+                {attachments.map((src, i) => (
+                  <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-white/10">
+                    <img src={src} alt="" className="w-full h-full object-cover" />
+                    <button
+                      onClick={() => removeAttachment(i)}
+                      className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/70 text-white flex items-center justify-center"
+                      aria-label="Remove"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Input */}
+            <div className="flex items-end gap-2 bg-zinc-900 rounded-2xl border border-white/10 focus-within:border-blue-400/50 px-3 py-2 transition-colors">
+              <label className="cursor-pointer text-zinc-400 hover:text-white p-1.5 shrink-0" title="Attach image">
+                <Paperclip className="w-4 h-4" />
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    onAttach(e.target.files);
+                    e.currentTarget.value = "";
+                  }}
+                />
+              </label>
+              <Textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+                placeholder={
+                  imageMode
+                    ? "Describe the image you want to generate…"
+                    : "Message Supernova — attach images, ask anything"
+                }
+                rows={1}
+                className="flex-1 min-h-[28px] max-h-40 resize-none bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-sm text-zinc-100 placeholder:text-zinc-500 px-1 py-1"
+              />
+              {busy ? (
+                <Button onClick={stop} size="icon" className="bg-red-600 hover:bg-red-500 text-white rounded-xl shrink-0">
+                  <StopCircle className="w-4 h-4" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={send}
+                  disabled={!draft.trim() && attachments.length === 0}
+                  size="icon"
+                  className="bg-gradient-to-br from-fuchsia-500 to-blue-600 hover:opacity-90 text-white rounded-xl shrink-0 disabled:opacity-40"
+                >
+                  <Send className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+            <p className="text-[10px] text-zinc-500 text-center">
+              Supernova can make mistakes. Conversations are saved to your account.
+            </p>
+          </div>
+        </div>
       </main>
+
+      {/* Rename dialog */}
+      <Dialog open={!!renameOpen} onOpenChange={(o) => !o && setRenameOpen(null)}>
+        <DialogContent className="bg-zinc-950 border-white/10 text-zinc-100">
+          <DialogHeader>
+            <DialogTitle>Rename chat</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={renameOpen?.title ?? ""}
+            onChange={(e) =>
+              setRenameOpen((r) => (r ? { ...r, title: e.target.value } : r))
+            }
+            className="bg-zinc-900 border-white/10"
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenameOpen(null)}>Cancel</Button>
+            <Button
+              className="bg-blue-600 hover:bg-blue-500"
+              onClick={async () => {
+                if (!user || !renameOpen) return;
+                await renameConversation(user.uid, renameOpen.id, renameOpen.title.trim() || "Untitled");
+                setRenameOpen(null);
+                toast.success("Renamed");
+              }}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+/* ───────────── Message bubble ───────────── */
+
+function MessageBubble({
+  msg,
+  streaming,
+  onRerollImage,
+}: {
+  msg: SupernovaMessage;
+  streaming?: boolean;
+  onRerollImage?: () => void;
+}) {
+  const isUser = msg.role === "user";
+  return (
+    <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
+      <div
+        className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs font-semibold ${
+          isUser
+            ? "bg-blue-600 text-white"
+            : "bg-gradient-to-br from-fuchsia-500 to-blue-500 text-white"
+        }`}
+      >
+        {isUser ? "You" : <Sparkles className="w-4 h-4" />}
+      </div>
+
+      <div className={`max-w-[80%] space-y-2 ${isUser ? "items-end" : "items-start"} flex flex-col`}>
+        {/* Attached / generated images */}
+        {msg.images && msg.images.length > 0 && (
+          <div className={`grid gap-2 ${msg.images.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+            {msg.images.map((src, i) => (
+              <div
+                key={i}
+                className="relative group rounded-xl overflow-hidden border border-white/10 bg-zinc-900"
+              >
+                <img src={src} alt="" className="w-full h-auto max-h-[420px] object-cover block" />
+                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                  <a
+                    href={src}
+                    download={`supernova-${i}.jpg`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-1.5 bg-black/70 backdrop-blur rounded-md text-white hover:bg-black"
+                    title="Download"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </a>
+                  {!isUser && msg.kind === "image" && onRerollImage && (
+                    <button
+                      onClick={onRerollImage}
+                      className="p-1.5 bg-black/70 backdrop-blur rounded-md text-white hover:bg-black"
+                      title="Re-roll"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Text content */}
+        {msg.content && (
+          <div
+            className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+              isUser
+                ? "bg-blue-600 text-white"
+                : "bg-zinc-900 border border-white/10 text-zinc-100"
+            }`}
+          >
+            {isUser ? (
+              <p className="whitespace-pre-wrap">{msg.content}</p>
+            ) : (
+              <div className="prose prose-invert prose-sm max-w-none prose-p:my-1.5 prose-pre:my-2 prose-pre:bg-black/40 prose-code:text-blue-300">
+                <ReactMarkdown>{msg.content}</ReactMarkdown>
+              </div>
+            )}
+            {streaming && <span className="text-blue-400 animate-pulse">▍</span>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
