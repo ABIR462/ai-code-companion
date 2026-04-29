@@ -4,13 +4,23 @@ import { callSambaNovaChat, hasSambaNovaConfig } from "@/lib/sambanova";
 export type AIMessage = { role: string; content: string };
 export type AIProvider = "Mistral" | "SambaNova";
 
-async function withTimeout<T>(task: (signal: AbortSignal) => Promise<T>, timeoutMs: number) {
+async function withTimeout<T>(
+  task: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  externalSignal?: AbortSignal,
+) {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  const onExternal = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener("abort", onExternal);
+  }
   try {
     return await task(controller.signal);
   } finally {
     window.clearTimeout(timer);
+    if (externalSignal) externalSignal.removeEventListener("abort", onExternal);
   }
 }
 
@@ -53,7 +63,7 @@ async function callMistral(messages: AIMessage[], signal?: AbortSignal, attempt 
 export async function streamWebsiteAI(
   messages: AIMessage[],
   onDelta: (chunk: string, full: string) => void,
-  options: { timeoutMs?: number; prefer?: "mistral" | "sambanova" } = {},
+  options: { timeoutMs?: number; prefer?: "mistral" | "sambanova"; signal?: AbortSignal } = {},
 ): Promise<{ content: string; provider: AIProvider }> {
   const errors: string[] = [];
 
@@ -144,7 +154,7 @@ export async function streamWebsiteAI(
       }
     }
     throw new Error(errors.length ? errors.join(" | ") : "No AI provider configured");
-  }, options.timeoutMs ?? 120_000);
+  }, options.timeoutMs ?? 120_000, options.signal);
 }
 
 export async function completeWebsiteAI(
