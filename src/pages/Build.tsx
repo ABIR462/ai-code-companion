@@ -320,7 +320,7 @@ export default function Build() {
           historyRef.current = updated;
           setHistory(updated);
         },
-        { prefer: "mistral", timeoutMs: 180_000 },
+        { prefer: "mistral", timeoutMs: 180_000, signal: controller.signal },
       );
 
       let parsed = parseFiles(result.content);
