@@ -104,7 +104,7 @@ export function HowItWorks() {
               Your next website is one prompt away.
             </h3>
             <p className="text-muted-foreground mb-6 max-w-lg mx-auto">
-              Join thousands of creators building faster with Matrix AI.
+              Join thousands of creators building faster with Matrixbook.
             </p>
             <a
               href="#builder"

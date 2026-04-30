@@ -20,7 +20,7 @@ const Index = () => {
   const pickTemplate = (t: Template) => start(t.prompt);
 
   useEffect(() => {
-    document.title = "Matrix AI — Build websites from a single prompt";
+    document.title = "Matrixbook — Create, chat, and craft with AI";
   }, []);
 
   return (
@@ -42,8 +42,8 @@ const Index = () => {
             <div className="md:col-span-2">
               <Brand size={36} />
               <p className="text-sm text-muted-foreground mt-4 max-w-xs leading-relaxed">
-                The AI-powered web builder that turns plain English into beautiful,
-                production-ready websites in seconds.
+                The AI-powered social platform where you build websites, craft images,
+                and chat with the community in realtime.
               </p>
               <div className="flex items-center gap-3 mt-5">
                 <a
@@ -107,7 +107,7 @@ const Index = () => {
           {/* Bottom bar */}
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-8 border-t border-border/40">
             <p className="text-xs text-muted-foreground font-mono">
-              © 2026 Matrix AI · Built by ABIR KAYAL
+              © 2026 Matrixbook · Built by ABIR KAYAL
             </p>
             <div className="flex items-center gap-4 text-xs text-muted-foreground font-mono">
               <span className="flex items-center gap-1.5">

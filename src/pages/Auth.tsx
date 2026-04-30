@@ -42,8 +42,8 @@ export default function AuthPage() {
   useEffect(() => {
     document.title =
       mode === "signup"
-        ? "Create your MATRIX-AI account"
-        : "Sign in to MATRIX-AI";
+        ? "Create your Matrixbook account"
+        : "Sign in to Matrixbook";
   }, [mode]);
 
   useEffect(() => {
@@ -63,7 +63,7 @@ export default function AuthPage() {
         await updateProfile(cred.user, {
           displayName: name || email.split("@")[0],
         });
-        toast.success("Welcome to MATRIX-AI ✨");
+        toast.success("Welcome to Matrixbook ✨");
       } else {
         await signInWithEmailAndPassword(auth, email, password);
         toast.success("Welcome back");
@@ -128,21 +128,21 @@ export default function AuthPage() {
           
           </p>
           <h2 className="font-display text-5xl font-bold leading-tight mb-6">
-            Ship apps at the{" "}
+            Build, chat, and create at the{" "}
             <span className="font-brand text-gradient-brand">
               speed of thought.
             </span>
           </h2>
           <p className="text-muted-foreground text-lg leading-relaxed">
-            Describe it. MATRIX-AI builds it. Beautiful, working,
-            production-ready code in seconds.
+            Free access to AI websites, AI images, and a realtime
+            creator community — all in one place.
           </p>
 
           <div className="mt-10 space-y-4">
             {[
               "AI-generated landing pages and components",
-              "Premium templates with real Freepik imagery",
-              "Live preview, code, and one-click export",
+              "Supernova: prompt → hyper-real or stylized images",
+              "Realtime rooms with presence powered by Ably",
             ].map((line) => (
               <div
                 key={line}
@@ -158,7 +158,7 @@ export default function AuthPage() {
         </div>
 
         <p className="relative z-10 text-xs text-muted-foreground font-mono">
-          © 2026 MATRIX-AI
+          © 2026 Matrixbook
         </p>
       </div>
 
@@ -330,7 +330,7 @@ export default function AuthPage() {
           <p className="text-sm text-center text-muted-foreground mt-6">
             {mode === "signup"
               ? "Already have an account?"
-              : "New to MATRIX-AI?"}{" "}
+              : "New to Matrixbook?"}{" "}
             <button
               onClick={() =>
                 setMode(mode === "signup" ? "signin" : "signup")
