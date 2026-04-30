@@ -19,6 +19,7 @@ interface ImportMetaEnv {
   readonly VITE_SAMBANOVA_API_KEY: string;
   readonly VITE_SAMBANOVA_CHAT_ENDPOINT: string;
   readonly VITE_SAMBANOVA_MODEL: string;
+  readonly VITE_ABLY_API_KEY: string;
 }
 
 interface ImportMeta {

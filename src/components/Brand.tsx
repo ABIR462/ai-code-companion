@@ -22,11 +22,11 @@ export function Brand({
         style={{ width: size, height: size }}
       >
         <span className="absolute inset-0 bg-gradient-primary rounded-lg blur-md opacity-50" />
-        <img src={logo} alt="MATRIX-AI" width={size} height={size} className="relative object-contain" />
+      <img src={logo} alt="Matrixbook" width={size} height={size} className="relative object-contain" />
       </span>
       {showWord && (
         <span className={`font-brand ${sizeClass} text-gradient-brand leading-none pb-1`}>
-          Matrix&nbsp;AI
+          Matrixbook
         </span>
       )}
     </span>
