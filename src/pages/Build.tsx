@@ -361,22 +361,10 @@ export default function Build() {
       <header className="flex items-center justify-between px-3 py-2 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-2">
           <Link to="/" aria-label="Back to home"><ArrowLeft className="w-5 h-5" /></Link>
-          {!isMobile && <span className="font-semibold text-sm tracking-wide">Matrix AI</span>}
-          <div className="ml-2 flex items-center gap-0.5 bg-white/5 border border-white/10 rounded-md p-0.5">
-            {(["html", "react", "nextjs"] as Mode[]).map((m) => (
-              <button
-                key={m}
-                onClick={() => !loading && setMode(m)}
-                disabled={loading}
-                className={`text-[10px] font-mono px-2 py-1 rounded transition ${
-                  mode === m ? "bg-blue-600 text-white" : "text-white/50 hover:text-white"
-                } ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
-                title={MODE_LABELS[m]}
-              >
-                {m === "html" ? "HTML" : m === "react" ? "React" : "Next"}
-              </button>
-            ))}
-          </div>
+          {!isMobile && <span className="font-semibold text-sm tracking-wide">Matrixbook IDE</span>}
+          <span className="ml-2 text-[10px] font-mono px-2 py-1 rounded bg-blue-600/20 border border-blue-500/30 text-blue-200">
+            HTML
+          </span>
         </div>
 
         <div className="flex items-center gap-1">
@@ -526,7 +514,7 @@ export default function Build() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); run(draft); } }}
-            placeholder={files.length ? "What should we change next?" : `Describe the ${MODE_LABELS[mode]} app to build…`}
+          placeholder={files.length ? "What should we change next?" : "Describe the website to build…"}
             className="flex-1 bg-transparent outline-none text-sm placeholder:text-white/30"
           />
           {queuedCount > 0 && (
