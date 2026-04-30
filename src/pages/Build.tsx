@@ -120,7 +120,6 @@ export default function Build() {
 
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [activePath, setActivePath] = useState<string>("");
-  const [mode, setMode] = useState<Mode>("html");
   const [draft, setDraft] = useState((location.state as any)?.prompt ?? "");
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState(false);
@@ -143,12 +142,10 @@ export default function Build() {
   const loadingRef = useRef(false);
   const queueRef = useRef<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
-  const modeRef = useRef(mode);
 
   useEffect(() => { filesRef.current = files; }, [files]);
   useEffect(() => { historyRef.current = history; }, [history]);
   useEffect(() => { docIdRef.current = docId; }, [docId]);
-  useEffect(() => { modeRef.current = mode; }, [mode]);
 
   useEffect(() => {
     const resize = () => setIsMobile(window.innerWidth < 768);
@@ -174,7 +171,7 @@ export default function Build() {
       const payload = {
         user_id: user.uid,
         prompt,
-        mode: modeRef.current,
+        mode: "html",
         files: projectFiles.map((f) => ({ path: f.path, content: f.content })),
         html: pickPreview(projectFiles),
         title: prompt.slice(0, 60),
@@ -214,10 +211,10 @@ export default function Build() {
 
     const userMsg = isFollowUp
       ? `Apply this change and return ALL files (full content, not diffs):\n\n${prompt}${filesContext}`
-      : `Build this as a complete, polished, fully interactive ${MODE_LABELS[modeRef.current]} project.\n\n${prompt}`;
+      : `Build this as a complete, polished, fully interactive single-file HTML website.\n\n${prompt}`;
 
     const messages = [
-      { role: "system", content: systemFor(modeRef.current) },
+      { role: "system", content: HTML_SYSTEM },
       { role: "user", content: userMsg },
     ];
 
