@@ -23,7 +23,6 @@ import {
 import { Link, useLocation } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { collection, addDoc, doc, updateDoc } from "firebase/firestore";
