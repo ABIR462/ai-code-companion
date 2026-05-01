@@ -11,7 +11,8 @@ type RuntimeEnvKey =
   | "VITE_MISTRAL_MODEL"
   | "VITE_SAMBANOVA_API_KEY"
   | "VITE_SAMBANOVA_CHAT_ENDPOINT"
-  | "VITE_SAMBANOVA_MODEL";
+  | "VITE_SAMBANOVA_MODEL"
+  | "VITE_GEMINI_API_KEY";
 
 const readEnv = (key: RuntimeEnvKey, fallback = "") => {
   const value = import.meta.env[key];
@@ -44,6 +45,9 @@ export const appEnv = {
     ),
     model: readEnv("VITE_SAMBANOVA_MODEL", "gemma-3-12b-it"),
   },
+  gemini: {
+    apiKey: readEnv("VITE_GEMINI_API_KEY"),
+  },
 } as const;
 
 export const firebaseMissingEnvKeys = [
@@ -70,3 +74,5 @@ export const sambanovaMissingEnvKeys = [
 export const isFirebaseConfigured = firebaseMissingEnvKeys.length === 0;
 export const isMistralConfigured = mistralMissingEnvKeys.length === 0;
 export const isSambaNovaConfigured = sambanovaMissingEnvKeys.length === 0;
+
+export const isGeminiConfigured = !!appEnv.gemini.apiKey;
