@@ -1,4 +1,4 @@
-import { appEnv, isMistralConfigured } from "@/lib/env";
+import { appEnv, isGeminiConfigured } from "@/lib/env";
 
 export type ChatPart =
   | { type: "text"; text: string }
@@ -9,15 +9,44 @@ export type ChatMessage = {
   content: string | ChatPart[];
 };
 
-const MISTRAL_VISION_MODEL = "pixtral-12b-2409";
-const MISTRAL_TEXT_MODEL = appEnv.mistral.model || "mistral-small-latest";
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
+const CHAT_MODEL = "gemini-2.5-flash-preview-05-20";
+const IMAGE_MODEL = "gemini-2.0-flash-exp";
 
-function headers() {
-  return {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-    Authorization: `Bearer ${appEnv.mistral.apiKey}`,
-  };
+/* ── Convert our ChatMessage[] to Gemini format ── */
+function toGeminiContents(messages: ChatMessage[]) {
+  const systemInstruction: string[] = [];
+  const contents: any[] = [];
+
+  for (const m of messages) {
+    if (m.role === "system") {
+      systemInstruction.push(typeof m.content === "string" ? m.content : m.content.filter(p => p.type === "text").map(p => (p as any).text).join("\n"));
+      continue;
+    }
+    const role = m.role === "assistant" ? "model" : "user";
+    const parts: any[] = [];
+    if (typeof m.content === "string") {
+      parts.push({ text: m.content });
+    } else {
+      for (const p of m.content) {
+        if (p.type === "text") {
+          parts.push({ text: p.text });
+        } else if (p.type === "image_url") {
+          const url = p.image_url.url;
+          if (url.startsWith("data:")) {
+            const match = url.match(/^data:(image\/\w+);base64,(.+)/);
+            if (match) {
+              parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+            }
+          } else {
+            parts.push({ text: `[Image: ${url}]` });
+          }
+        }
+      }
+    }
+    if (parts.length) contents.push({ role, parts });
+  }
+  return { systemInstruction: systemInstruction.length ? { parts: [{ text: systemInstruction.join("\n") }] } : undefined, contents };
 }
 
 /** Fast non-streaming chat used for short replies and image captions. */
@@ -25,25 +54,28 @@ export async function chatOnce(
   messages: ChatMessage[],
   options: { vision?: boolean; signal?: AbortSignal; maxTokens?: number; temperature?: number } = {},
 ): Promise<string> {
-  if (!isMistralConfigured) throw new Error("Mistral API key is not configured");
-  const model = options.vision ? MISTRAL_VISION_MODEL : MISTRAL_TEXT_MODEL;
-  const resp = await fetch(appEnv.mistral.chatEndpoint, {
+  if (!isGeminiConfigured) throw new Error("Gemini API key is not configured");
+  const { systemInstruction, contents } = toGeminiContents(messages);
+  const url = `${GEMINI_BASE}/models/${CHAT_MODEL}:generateContent?key=${appEnv.gemini.apiKey}`;
+  const resp = await fetch(url, {
     method: "POST",
-    headers: headers(),
+    headers: { "Content-Type": "application/json" },
     signal: options.signal,
     body: JSON.stringify({
-      model,
-      messages,
-      temperature: options.temperature ?? 0.5,
-      max_tokens: options.maxTokens ?? 1024,
+      ...(systemInstruction ? { systemInstruction } : {}),
+      contents,
+      generationConfig: {
+        temperature: options.temperature ?? 0.5,
+        maxOutputTokens: options.maxTokens ?? 1024,
+      },
     }),
   });
   if (!resp.ok) {
     const txt = await resp.text().catch(() => "");
-    throw new Error(`Mistral ${resp.status}: ${txt.slice(0, 200)}`);
+    throw new Error(`Gemini ${resp.status}: ${txt.slice(0, 200)}`);
   }
   const data = await resp.json();
-  return String(data?.choices?.[0]?.message?.content ?? "").trim();
+  return String(data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "").trim();
 }
 
 /** Streaming chat that emits deltas; supports text + image inputs (vision auto). */
@@ -52,29 +84,27 @@ export async function streamChat(
   onDelta: (chunk: string, full: string) => void,
   options: { signal?: AbortSignal; maxTokens?: number; temperature?: number } = {},
 ): Promise<string> {
-  if (!isMistralConfigured) throw new Error("Mistral API key is not configured");
+  if (!isGeminiConfigured) throw new Error("Gemini API key is not configured");
 
-  const usesImages = messages.some(
-    (m) => Array.isArray(m.content) && m.content.some((p) => p.type === "image_url"),
-  );
-  const model = usesImages ? MISTRAL_VISION_MODEL : MISTRAL_TEXT_MODEL;
-
-  const resp = await fetch(appEnv.mistral.chatEndpoint, {
+  const { systemInstruction, contents } = toGeminiContents(messages);
+  const url = `${GEMINI_BASE}/models/${CHAT_MODEL}:streamGenerateContent?alt=sse&key=${appEnv.gemini.apiKey}`;
+  const resp = await fetch(url, {
     method: "POST",
-    headers: headers(),
+    headers: { "Content-Type": "application/json" },
     signal: options.signal,
     body: JSON.stringify({
-      model,
-      messages,
-      temperature: options.temperature ?? 0.6,
-      max_tokens: options.maxTokens ?? 2048,
-      stream: true,
+      ...(systemInstruction ? { systemInstruction } : {}),
+      contents,
+      generationConfig: {
+        temperature: options.temperature ?? 0.6,
+        maxOutputTokens: options.maxTokens ?? 2048,
+      },
     }),
   });
 
   if (!resp.ok || !resp.body) {
     const txt = await resp.text().catch(() => "");
-    throw new Error(`Mistral ${resp.status}: ${txt.slice(0, 200)}`);
+    throw new Error(`Gemini ${resp.status}: ${txt.slice(0, 200)}`);
   }
 
   const reader = resp.body.getReader();
@@ -95,14 +125,13 @@ export async function streamChat(
       if (!payload || payload === "[DONE]") continue;
       try {
         const json = JSON.parse(payload);
-        const delta = json?.choices?.[0]?.delta?.content;
+        const delta = json?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (typeof delta === "string" && delta) {
           full += delta;
           onDelta(delta, full);
         }
       } catch {
-        buffer = line + "\n" + buffer;
-        break;
+        // partial JSON, skip
       }
     }
   }
@@ -194,16 +223,54 @@ export async function generateImage(opts: {
   count?: number;
   signal?: AbortSignal;
 }): Promise<GeneratedImage[]> {
+  if (!isGeminiConfigured) throw new Error("Gemini API key is not configured");
   const style = opts.style ?? "auto";
   const ratio = opts.ratio ?? "1:1";
   const count = Math.min(Math.max(opts.count ?? 1, 1), 4);
   const finalPrompt = buildImagePrompt(opts.prompt, style);
   const out: GeneratedImage[] = [];
+
   for (let i = 0; i < count; i++) {
     const seed = Date.now() + Math.floor(Math.random() * 100000) + i;
-    const url = pollinationsUrl(finalPrompt, ratio, seed);
-    await loadImage(url, opts.signal);
-    out.push({ url, prompt: finalPrompt, style, ratio, seed });
+    const { w, h } = RATIO_DIMS[ratio];
+
+    // Use Gemini image generation via Imagen
+    const url = `${GEMINI_BASE}/models/${IMAGE_MODEL}:generateContent?key=${appEnv.gemini.apiKey}`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: opts.signal,
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `${finalPrompt}. Aspect ratio approximately ${w}:${h}. Seed: ${seed}` }] }],
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+        },
+      }),
+    });
+
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => "");
+      throw new Error(`Gemini image ${resp.status}: ${txt.slice(0, 300)}`);
+    }
+
+    const data = await resp.json();
+    const parts = data?.candidates?.[0]?.content?.parts ?? [];
+    let imageUrl = "";
+
+    for (const part of parts) {
+      if (part.inlineData) {
+        imageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+        break;
+      }
+    }
+
+    if (!imageUrl) {
+      // Fallback to Pollinations if Gemini doesn't return an image
+      imageUrl = pollinationsUrl(finalPrompt, ratio, seed);
+      await loadImage(imageUrl, opts.signal);
+    }
+
+    out.push({ url: imageUrl, prompt: finalPrompt, style, ratio, seed });
   }
   return out;
 }
