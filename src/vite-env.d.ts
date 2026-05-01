@@ -16,9 +16,6 @@ interface ImportMetaEnv {
   readonly VITE_MISTRAL_API_KEY: string;
   readonly VITE_MISTRAL_CHAT_ENDPOINT: string;
   readonly VITE_MISTRAL_MODEL: string;
-  readonly VITE_SAMBANOVA_API_KEY: string;
-  readonly VITE_SAMBANOVA_CHAT_ENDPOINT: string;
-  readonly VITE_SAMBANOVA_MODEL: string;
   readonly VITE_GEMINI_API_KEY: string;
 }
 

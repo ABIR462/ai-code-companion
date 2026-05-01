@@ -14,7 +14,6 @@ import {
   MessageSquare,
   Sparkles,
   Image as ImageIcon,
-  Settings,
   FileCode,
   FolderTree,
   X,
@@ -24,25 +23,15 @@ import {
 import { Link, useLocation } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { collection, addDoc, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/integrations/firebase/config";
 import { streamWebsiteAI } from "@/lib/websiteAI";
-import { getStoredSambaNovaKey, saveStoredSambaNovaKey } from "@/lib/sambanova";
 
 type ChatTurn = { role: "user" | "assistant"; content: string };
 type Device = "desktop" | "tablet" | "mobile";
-type Mode = "html" | "react" | "nextjs";
 type ProjectFile = { path: string; content: string; language: string };
-
-const MODE_LABELS: Record<Mode, string> = {
-  html: "Single HTML",
-  react: "React (Vite)",
-  nextjs: "Next.js",
-};
 
 const HTML_SYSTEM = `You are MATRIX-AI, an expert web developer powered by Mistral Codestral.
 
@@ -62,81 +51,6 @@ RULES:
 - Use vanilla JavaScript for interactivity (no build step)
 - Persist state via localStorage when relevant`;
 
-const REACT_SYSTEM = `You are MATRIX-AI, an expert React engineer powered by Mistral Codestral.
-
-OUTPUT FORMAT — VERY STRICT:
-Return ONE OR MORE fenced code blocks. Every block MUST start with: \`\`\`<lang> path=<relative/path>
-No prose between blocks. Example:
-
-\`\`\`html path=index.html
-<!doctype html><html>...</html>
-\`\`\`
-\`\`\`tsx path=src/App.tsx
-export default function App(){ return <div/> }
-\`\`\`
-
-REQUIRED FILES for a React + Vite + TypeScript + Tailwind project:
-- index.html (with <div id="root"></div> and <script type="module" src="/src/main.tsx"></script>)
-- package.json (vite, react, react-dom, typescript, tailwindcss)
-- vite.config.ts
-- tailwind.config.js + postcss.config.js
-- src/main.tsx (renders <App/>)
-- src/App.tsx (the page)
-- src/index.css (with @tailwind directives)
-
-For PREVIEW, also include a self-contained \`preview.html\` that renders the same UI using React + Babel + Tailwind via CDN so it can run in an iframe without a build:
-
-\`\`\`html path=preview.html
-<!doctype html><html><head>
-<script src="https://cdn.tailwindcss.com"></script>
-<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-</head><body><div id="root"></div>
-<script type="text/babel" data-presets="react,typescript">
-  // inline App component here, then ReactDOM.createRoot(document.getElementById('root')).render(<App/>)
-</script></body></html>
-\`\`\`
-
-Modern UI: Tailwind, semantic HTML, smooth animations. Mobile-first.`;
-
-const NEXT_SYSTEM = `You are MATRIX-AI, an expert Next.js (App Router) engineer powered by Mistral Codestral.
-
-OUTPUT FORMAT — VERY STRICT:
-Return multiple fenced code blocks; every block MUST start with: \`\`\`<lang> path=<relative/path>
-No prose between blocks.
-
-REQUIRED FILES (Next.js 14 App Router + Tailwind + TypeScript):
-- package.json
-- next.config.mjs
-- tsconfig.json
-- tailwind.config.ts + postcss.config.js
-- app/layout.tsx
-- app/page.tsx
-- app/globals.css (with @tailwind directives)
-- Any extra components under app/components/*.tsx
-
-Also include preview.html — a self-contained HTML file using React + Babel + Tailwind CDN that mirrors the home page so users can preview without running a Next dev server:
-
-\`\`\`html path=preview.html
-<!doctype html><html><head>
-<script src="https://cdn.tailwindcss.com"></script>
-<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-</head><body><div id="root"></div>
-<script type="text/babel" data-presets="react,typescript">
-  // home page UI then ReactDOM.createRoot(...).render(<Page/>)
-</script></body></html>
-\`\`\`
-
-Modern UI, responsive, accessible.`;
-
-function systemFor(mode: Mode) {
-  if (mode === "react") return REACT_SYSTEM;
-  if (mode === "nextjs") return NEXT_SYSTEM;
-  return HTML_SYSTEM;
-}
 
 function langFromPath(p: string) {
   const ext = p.split(".").pop()?.toLowerCase() ?? "";
@@ -200,7 +114,6 @@ export default function Build() {
 
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [activePath, setActivePath] = useState<string>("");
-  const [mode, setMode] = useState<Mode>("html");
   const [draft, setDraft] = useState((location.state as any)?.prompt ?? "");
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState(false);
@@ -211,9 +124,7 @@ export default function Build() {
   const [history, setHistory] = useState<ChatTurn[]>([]);
   const [docId, setDocId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [queuedCount, setQueuedCount] = useState(0);
-  const [sambaKeyDraft, setSambaKeyDraft] = useState(() => getStoredSambaNovaKey());
   const [streamBuffer, setStreamBuffer] = useState("");
 
   const didAutoRun = useRef(false);
@@ -223,12 +134,10 @@ export default function Build() {
   const loadingRef = useRef(false);
   const queueRef = useRef<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
-  const modeRef = useRef(mode);
 
   useEffect(() => { filesRef.current = files; }, [files]);
   useEffect(() => { historyRef.current = history; }, [history]);
   useEffect(() => { docIdRef.current = docId; }, [docId]);
-  useEffect(() => { modeRef.current = mode; }, [mode]);
 
   useEffect(() => {
     const resize = () => setIsMobile(window.innerWidth < 768);
@@ -254,7 +163,7 @@ export default function Build() {
       const payload = {
         user_id: user.uid,
         prompt,
-        mode: modeRef.current,
+        mode: "html",
         files: projectFiles.map((f) => ({ path: f.path, content: f.content })),
         html: pickPreview(projectFiles),
         title: prompt.slice(0, 60),
@@ -294,10 +203,10 @@ export default function Build() {
 
     const userMsg = isFollowUp
       ? `Apply this change and return ALL files (full content, not diffs):\n\n${prompt}${filesContext}`
-      : `Build this as a complete, polished, fully interactive ${MODE_LABELS[modeRef.current]} project.\n\n${prompt}`;
+      : `Build this as a complete, polished, fully interactive single HTML page.\n\n${prompt}`;
 
     const messages = [
-      { role: "system", content: systemFor(modeRef.current) },
+      { role: "system", content: HTML_SYSTEM },
       { role: "user", content: userMsg },
     ];
 
@@ -320,7 +229,7 @@ export default function Build() {
           historyRef.current = updated;
           setHistory(updated);
         },
-        { prefer: "mistral", timeoutMs: 180_000, signal: controller.signal },
+        { timeoutMs: 180_000, signal: controller.signal },
       );
 
       let parsed = parseFiles(result.content);
@@ -444,22 +353,8 @@ export default function Build() {
       <header className="flex items-center justify-between px-3 py-2 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-2">
           <Link to="/" aria-label="Back to home"><ArrowLeft className="w-5 h-5" /></Link>
-          {!isMobile && <span className="font-semibold text-sm tracking-wide">Matrix AI</span>}
-          <div className="ml-2 flex items-center gap-0.5 bg-white/5 border border-white/10 rounded-md p-0.5">
-            {(["html", "react", "nextjs"] as Mode[]).map((m) => (
-              <button
-                key={m}
-                onClick={() => !loading && setMode(m)}
-                disabled={loading}
-                className={`text-[10px] font-mono px-2 py-1 rounded transition ${
-                  mode === m ? "bg-blue-600 text-white" : "text-white/50 hover:text-white"
-                } ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
-                title={MODE_LABELS[m]}
-              >
-                {m === "html" ? "HTML" : m === "react" ? "React" : "Next"}
-              </button>
-            ))}
-          </div>
+          {!isMobile && <span className="font-semibold text-sm tracking-wide">Matrixbook IDE</span>}
+          <span className="ml-2 text-[10px] font-mono px-2 py-1 rounded bg-blue-600/20 text-blue-300 border border-blue-500/20">HTML</span>
         </div>
 
         <div className="flex items-center gap-1">
@@ -470,9 +365,6 @@ export default function Build() {
           >
             <ImageIcon className="w-4 h-4" />
           </Link>
-          <Button size="icon" variant="ghost" onClick={() => setSettingsOpen(true)} title="AI settings" className="text-white/70 hover:text-white">
-            <Settings className="w-4 h-4" />
-          </Button>
           {history.length > 0 && (
             <Button size="icon" variant="ghost" onClick={() => setShowHistory((v) => !v)} title="Chat history" className="text-white/70 hover:text-white relative">
               <MessageSquare className="w-4 h-4" />
@@ -609,7 +501,7 @@ export default function Build() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); run(draft); } }}
-            placeholder={files.length ? "What should we change next?" : `Describe the ${MODE_LABELS[mode]} app to build…`}
+            placeholder={files.length ? "What should we change next?" : "Describe the website to build…"}
             className="flex-1 bg-transparent outline-none text-sm placeholder:text-white/30"
           />
           {queuedCount > 0 && (
@@ -654,21 +546,6 @@ export default function Build() {
           </aside>
         </div>
       )}
-
-      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="glass-strong max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Settings className="w-4 h-4 text-primary" /> AI settings</DialogTitle>
-            <DialogDescription>Optional SambaNova fallback key (Mistral is primary).</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Input value={sambaKeyDraft} onChange={(e) => setSambaKeyDraft(e.target.value)} placeholder="SambaNova API key (optional)" className="bg-white/5 border-white/10 text-white" />
-            <Button className="w-full bg-blue-600 hover:bg-blue-500 text-white" onClick={() => { saveStoredSambaNovaKey(sambaKeyDraft); setSettingsOpen(false); toast.success("Saved"); }}>
-              Save AI key
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {isMobile && previewHtml && (
         <button onClick={() => { const w = window.open("", "_blank"); if (w) { w.document.write(previewHtml); w.document.close(); } }} className="fixed bottom-24 right-4 bg-blue-600 hover:bg-blue-500 p-4 rounded-full shadow-xl transition-colors" aria-label="Open preview">
