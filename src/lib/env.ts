@@ -9,9 +9,6 @@ type RuntimeEnvKey =
   | "VITE_MISTRAL_API_KEY"
   | "VITE_MISTRAL_CHAT_ENDPOINT"
   | "VITE_MISTRAL_MODEL"
-  | "VITE_SAMBANOVA_API_KEY"
-  | "VITE_SAMBANOVA_CHAT_ENDPOINT"
-  | "VITE_SAMBANOVA_MODEL"
   | "VITE_GEMINI_API_KEY";
 
 const readEnv = (key: RuntimeEnvKey, fallback = "") => {
@@ -37,14 +34,6 @@ export const appEnv = {
     ),
     model: readEnv("VITE_MISTRAL_MODEL", "codestral-latest"),
   },
-  sambanova: {
-    apiKey: readEnv("VITE_SAMBANOVA_API_KEY"),
-    chatEndpoint: readEnv(
-      "VITE_SAMBANOVA_CHAT_ENDPOINT",
-      "https://api.sambanova.ai/v1/chat/completions",
-    ),
-    model: readEnv("VITE_SAMBANOVA_MODEL", "gemma-3-12b-it"),
-  },
   gemini: {
     apiKey: readEnv("VITE_GEMINI_API_KEY"),
   },
@@ -65,14 +54,7 @@ export const mistralMissingEnvKeys = [
   ["VITE_MISTRAL_MODEL", appEnv.mistral.model],
 ].flatMap(([key, value]) => (value ? [] : [key]));
 
-export const sambanovaMissingEnvKeys = [
-  ["VITE_SAMBANOVA_API_KEY", appEnv.sambanova.apiKey],
-  ["VITE_SAMBANOVA_CHAT_ENDPOINT", appEnv.sambanova.chatEndpoint],
-  ["VITE_SAMBANOVA_MODEL", appEnv.sambanova.model],
-].flatMap(([key, value]) => (value ? [] : [key]));
-
 export const isFirebaseConfigured = firebaseMissingEnvKeys.length === 0;
 export const isMistralConfigured = mistralMissingEnvKeys.length === 0;
-export const isSambaNovaConfigured = sambanovaMissingEnvKeys.length === 0;
 
 export const isGeminiConfigured = !!appEnv.gemini.apiKey;
