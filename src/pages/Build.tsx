@@ -137,7 +137,6 @@ export default function Build() {
   const loadingRef = useRef(false);
   const queueRef = useRef<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
-  const modeRef = useRef(mode);
 
   useEffect(() => { filesRef.current = files; }, [files]);
   useEffect(() => { historyRef.current = history; }, [history]);
