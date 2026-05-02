@@ -11,7 +11,6 @@ export type ChatMessage = {
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 const CHAT_MODEL = "gemini-flash-latest";
-const IMAGE_MODEL = "gemini-2.0-flash-exp";
 
 /* ── Convert our ChatMessage[] to Gemini format ── */
 function toGeminiContents(messages: ChatMessage[]) {
@@ -223,7 +222,6 @@ export async function generateImage(opts: {
   count?: number;
   signal?: AbortSignal;
 }): Promise<GeneratedImage[]> {
-  if (!isGeminiConfigured) throw new Error("Gemini API key is not configured");
   const style = opts.style ?? "auto";
   const ratio = opts.ratio ?? "1:1";
   const count = Math.min(Math.max(opts.count ?? 1, 1), 4);
@@ -232,43 +230,10 @@ export async function generateImage(opts: {
 
   for (let i = 0; i < count; i++) {
     const seed = Date.now() + Math.floor(Math.random() * 100000) + i;
-    const { w, h } = RATIO_DIMS[ratio];
 
-    // Use Gemini image generation via Imagen
-    const url = `${GEMINI_BASE}/models/${IMAGE_MODEL}:generateContent?key=${appEnv.gemini.apiKey}`;
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: opts.signal,
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: `${finalPrompt}. Aspect ratio approximately ${w}:${h}. Seed: ${seed}` }] }],
-        generationConfig: {
-          responseModalities: ["TEXT", "IMAGE"],
-        },
-      }),
-    });
-
-    if (!resp.ok) {
-      const txt = await resp.text().catch(() => "");
-      throw new Error(`Gemini image ${resp.status}: ${txt.slice(0, 300)}`);
-    }
-
-    const data = await resp.json();
-    const parts = data?.candidates?.[0]?.content?.parts ?? [];
-    let imageUrl = "";
-
-    for (const part of parts) {
-      if (part.inlineData) {
-        imageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-        break;
-      }
-    }
-
-    if (!imageUrl) {
-      // Fallback to Pollinations if Gemini doesn't return an image
-      imageUrl = pollinationsUrl(finalPrompt, ratio, seed);
-      await loadImage(imageUrl, opts.signal);
-    }
+    // Use Pollinations (free, reliable, high-quality image generation)
+    const imageUrl = pollinationsUrl(finalPrompt, ratio, seed);
+    await loadImage(imageUrl, opts.signal);
 
     out.push({ url: imageUrl, prompt: finalPrompt, style, ratio, seed });
   }

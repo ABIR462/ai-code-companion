@@ -66,10 +66,10 @@ const STYLES: { id: ImageStyle; label: string }[] = [
 const RATIOS: ImageRatio[] = ["1:1", "16:9", "9:16", "3:2", "2:3", "4:3"];
 
 const SUGGESTED = [
-  { icon: "✨", text: "Create a cinematic poster of a lone astronaut on a neon planet" },
-  { icon: "🎨", text: "Draw a watercolor of a Japanese garden in autumn" },
-  { icon: "💡", text: "Explain quantum computing like I'm 10 years old" },
-  { icon: "📝", text: "Write a creative short story about time travel" },
+  { icon: "🖼️", text: "Generate a cinematic poster of an astronaut on a neon planet", image: true },
+  { icon: "🎨", text: "Draw a watercolor of a Japanese garden in autumn", image: true },
+  { icon: "💡", text: "Explain quantum computing like I'm 10 years old", image: false },
+  { icon: "📝", text: "Write a creative short story about time travel", image: false },
 ];
 
 function autoTitle(text: string) {
@@ -460,11 +460,21 @@ export default function Supernova() {
                   {SUGGESTED.map((s) => (
                     <button
                       key={s.text}
-                      onClick={() => setDraft(s.text)}
+                      onClick={() => {
+                        setDraft(s.text);
+                        if (s.image) setImageMode(true);
+                      }}
                       className="text-left p-4 rounded-2xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.07] transition-all hover:border-white/[0.15] hover:scale-[1.02]"
                     >
-                      <span className="text-lg mr-2">{s.icon}</span>
-                      <span className="text-sm text-zinc-300 leading-snug">{s.text}</span>
+                      <div className="flex items-start gap-2">
+                        <span className="text-lg">{s.icon}</span>
+                        <span className="text-sm text-zinc-300 leading-snug">{s.text}</span>
+                      </div>
+                      {s.image && (
+                        <span className="mt-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/20">
+                          Image
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -503,7 +513,7 @@ export default function Supernova() {
                 title="Toggle image generation mode"
               >
                 <ImageIcon className="w-3.5 h-3.5" />
-                {imageMode ? "Image mode" : "Chat"}
+                {imageMode ? "🎨 Image mode" : "💬 Chat"}
               </button>
 
               {imageMode && (
@@ -528,8 +538,8 @@ export default function Supernova() {
               )}
 
               {!imageMode && (
-                <span className="text-[10px] text-zinc-500 font-mono">
-                  Tip: type <span className="text-zinc-300">/image a sunset</span> or attach a photo
+                <span className="text-[10px] text-zinc-500">
+                  Tip: type <code className="text-zinc-300 bg-white/5 px-1 rounded">/image a sunset</code> or switch to Image mode
                 </span>
               )}
             </div>
@@ -600,7 +610,7 @@ export default function Supernova() {
               )}
             </div>
             <p className="text-[10px] text-zinc-600 text-center">
-              Supernova may make mistakes. Check important info.
+              Powered by Gemini AI · Images via Pollinations
             </p>
           </div>
         </div>
