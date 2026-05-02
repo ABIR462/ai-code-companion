@@ -31,8 +31,8 @@ async function callMistral(messages: AIMessage[], signal?: AbortSignal, attempt 
     body: JSON.stringify({
       model: MISTRAL_MODEL,
       messages,
-      temperature: 0.15,
-      max_tokens: 4096,
+      temperature: 0.1,
+      max_tokens: 8192,
     }),
   });
 
@@ -79,8 +79,8 @@ export async function streamWebsiteAI(
       body: JSON.stringify({
         model,
         messages,
-        temperature: 0.15,
-        max_tokens: 4096,
+        temperature: 0.1,
+        max_tokens: 8192,
         stream: true,
       }),
     });
