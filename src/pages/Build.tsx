@@ -49,7 +49,13 @@ RULES:
 - Mobile-first responsive
 - Include realistic placeholder content, hover states, micro-interactions
 - Use vanilla JavaScript for interactivity (no build step)
-- Persist state via localStorage when relevant`;
+- Persist state via localStorage when relevant
+- For images use Unsplash: <img src="https://images.unsplash.com/photo-{id}?w=800&q=80" /> or picsum: <img src="https://picsum.photos/seed/{word}/800/600" />
+- Use Font Awesome CDN for icons: <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+- Use Google Fonts for typography: <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+- Generate complete, production-quality pages with hero sections, cards, footers
+- Always include beautiful images — never leave image placeholders empty
+- Be concise in code — avoid unnecessary comments`;
 
 
 function langFromPath(p: string) {
