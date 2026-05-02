@@ -10,7 +10,7 @@ export type ChatMessage = {
 };
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
-const CHAT_MODEL = "gemini-2.5-flash-preview-05-20";
+const CHAT_MODEL = "gemini-flash-latest";
 const IMAGE_MODEL = "gemini-2.0-flash-exp";
 
 /* ── Convert our ChatMessage[] to Gemini format ── */

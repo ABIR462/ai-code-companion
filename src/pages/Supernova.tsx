@@ -66,10 +66,10 @@ const STYLES: { id: ImageStyle; label: string }[] = [
 const RATIOS: ImageRatio[] = ["1:1", "16:9", "9:16", "3:2", "2:3", "4:3"];
 
 const SUGGESTED = [
-  { icon: "🎨", text: "Create a cinematic poster of a lone astronaut on a neon planet" },
-  { icon: "🐉", text: "Anime illustration of a friendly dragon over a mountain village" },
-  { icon: "🖼️", text: "Minimal vector logo for a coffee brand called 'North'" },
-  { icon: "💡", text: "Explain quantum entanglement in 3 short paragraphs" },
+  { icon: "✨", text: "Create a cinematic poster of a lone astronaut on a neon planet" },
+  { icon: "🎨", text: "Draw a watercolor of a Japanese garden in autumn" },
+  { icon: "💡", text: "Explain quantum computing like I'm 10 years old" },
+  { icon: "📝", text: "Write a creative short story about time travel" },
 ];
 
 function autoTitle(text: string) {
@@ -335,37 +335,39 @@ export default function Supernova() {
   }
 
   return (
-    <div className="h-screen flex bg-zinc-950 text-zinc-100">
+    <div className="h-screen flex bg-[#131314] text-zinc-100">
       {/* ─── Sidebar ─── */}
       <aside
         className={`${
           sidebarOpen ? "w-72" : "w-0"
-        } shrink-0 transition-[width] duration-200 overflow-hidden border-r border-white/5 bg-zinc-950/95 backdrop-blur flex flex-col`}
+        } shrink-0 transition-[width] duration-200 overflow-hidden border-r border-white/[0.06] bg-[#1e1f20] flex flex-col`}
       >
         <div className="p-3 flex items-center gap-2 border-b border-white/5">
           <Link to="/" className="text-zinc-400 hover:text-white" aria-label="Home">
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div className="flex items-center gap-2 flex-1">
-            <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-fuchsia-500 to-blue-500 flex items-center justify-center">
-              <Wand2 className="w-3.5 h-3.5" />
+            <span className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
+              <Sparkles className="w-4 h-4" />
             </span>
-            <span className="font-semibold text-sm tracking-wide">Supernova</span>
+            <span className="font-semibold text-base">Supernova</span>
           </div>
         </div>
 
         <div className="p-3">
           <Button
             onClick={newChat}
-            className="w-full justify-start gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-100"
+            className="w-full justify-start gap-2 bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-100 rounded-full h-10"
           >
             <MessageSquarePlus className="w-4 h-4" /> New chat
           </Button>
         </div>
 
-        <div className="px-2 pb-2 text-[10px] uppercase tracking-wider text-zinc-500 font-mono">
-          Recent · {convos.length}
-        </div>
+        {convos.length > 0 && (
+          <div className="px-3 pb-1 pt-2 text-[11px] font-medium text-zinc-500">
+            Recent
+          </div>
+        )}
 
         <nav className="flex-1 overflow-auto px-2 space-y-0.5">
           {convos.length === 0 ? (
@@ -376,8 +378,8 @@ export default function Supernova() {
             convos.map((c) => (
               <div
                 key={c.id}
-                className={`group rounded-lg flex items-center gap-1 ${
-                  activeId === c.id ? "bg-white/10" : "hover:bg-white/5"
+                className={`group rounded-full flex items-center gap-1 ${
+                  activeId === c.id ? "bg-white/[0.08]" : "hover:bg-white/[0.04]"
                 }`}
               >
                 <button
@@ -405,12 +407,12 @@ export default function Supernova() {
           )}
         </nav>
 
-        <div className="p-3 border-t border-white/5 flex items-center gap-2">
+        <div className="p-3 border-t border-white/[0.06] flex items-center gap-2">
           {user.photoURL ? (
-            <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full" />
+            <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full ring-2 ring-white/10" />
           ) : (
-            <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
-              <UserIcon className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold">
+              {(user.displayName || user.email || "U")[0].toUpperCase()}
             </div>
           )}
           <div className="flex-1 min-w-0">
@@ -428,47 +430,41 @@ export default function Supernova() {
       {/* ─── Main ─── */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="h-12 px-3 flex items-center gap-2 border-b border-white/5">
+        <header className="h-12 px-4 flex items-center gap-2 border-b border-white/[0.06]">
           <button
             onClick={() => setSidebarOpen((s) => !s)}
-            className="p-2 rounded-md hover:bg-white/5 text-zinc-400 hover:text-white"
+            className="p-2 rounded-full hover:bg-white/[0.06] text-zinc-400 hover:text-white"
             aria-label="Toggle sidebar"
           >
             <Menu className="w-4 h-4" />
           </button>
-          <h1 className="text-sm font-medium truncate flex-1">
-            {activeConvo?.title ?? "New chat"}
+          <h1 className="text-sm font-medium truncate flex-1 text-zinc-300">
+            {activeConvo?.title ?? "Supernova"}
           </h1>
-          <Link
-            to="/build"
-            className="text-xs text-zinc-400 hover:text-white px-2 py-1 rounded-md hover:bg-white/5"
-          >
-            Open IDE
-          </Link>
         </header>
 
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 overflow-auto">
-          <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+          <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
             {messages.length === 0 && !streamText ? (
-              <div className="flex flex-col items-center justify-center text-center pt-16 pb-8">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-fuchsia-500 to-blue-500 flex items-center justify-center mb-4">
-                  <Sparkles className="w-7 h-7" />
+              <div className="flex flex-col items-center justify-center text-center pt-20 pb-8">
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 flex items-center justify-center mb-5 shadow-xl shadow-purple-500/25">
+                  <Sparkles className="w-8 h-8" />
                 </div>
-                <h2 className="text-3xl font-semibold tracking-tight">
+                <h2 className="text-3xl font-semibold tracking-tight bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">
                   Hello{user.displayName ? `, ${user.displayName.split(" ")[0]}` : ""}
                 </h2>
-                <p className="text-zinc-400 mt-2">How can I help you today?</p>
+                <p className="text-zinc-500 mt-2 text-base">How can I help you today?</p>
 
-                <div className="grid sm:grid-cols-2 gap-2 mt-8 w-full max-w-2xl">
+                <div className="grid sm:grid-cols-2 gap-3 mt-10 w-full max-w-xl">
                   {SUGGESTED.map((s) => (
                     <button
                       key={s.text}
                       onClick={() => setDraft(s.text)}
-                      className="text-left p-3 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] transition"
+                      className="text-left p-4 rounded-2xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.07] transition-all hover:border-white/[0.15] hover:scale-[1.02]"
                     >
-                      <span className="text-base mr-2">{s.icon}</span>
-                      <span className="text-sm text-zinc-200">{s.text}</span>
+                      <span className="text-lg mr-2">{s.icon}</span>
+                      <span className="text-sm text-zinc-300 leading-snug">{s.text}</span>
                     </button>
                   ))}
                 </div>
@@ -493,8 +489,8 @@ export default function Supernova() {
         </div>
 
         {/* Composer */}
-        <div className="border-t border-white/5 bg-zinc-950">
-          <div className="max-w-3xl mx-auto px-4 py-3 space-y-2">
+        <div className="bg-[#131314]">
+          <div className="max-w-2xl mx-auto px-4 py-3 space-y-2">
             {/* Mode + style row */}
             <div className="flex items-center gap-2 flex-wrap">
               <button
@@ -557,7 +553,7 @@ export default function Supernova() {
             )}
 
             {/* Input */}
-            <div className="flex items-end gap-2 bg-zinc-900 rounded-2xl border border-white/10 focus-within:border-blue-400/50 px-3 py-2 transition-colors">
+            <div className="flex items-end gap-2 bg-[#1e1f20] rounded-3xl border border-white/[0.08] focus-within:border-purple-400/40 px-4 py-2.5 transition-all shadow-lg shadow-black/20">
               <label className="cursor-pointer text-zinc-400 hover:text-white p-1.5 shrink-0" title="Attach image">
                 <Paperclip className="w-4 h-4" />
                 <input
@@ -589,7 +585,7 @@ export default function Supernova() {
                 className="flex-1 min-h-[28px] max-h-40 resize-none bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-sm text-zinc-100 placeholder:text-zinc-500 px-1 py-1"
               />
               {busy ? (
-                <Button onClick={stop} size="icon" className="bg-red-600 hover:bg-red-500 text-white rounded-xl shrink-0">
+                <Button onClick={stop} size="icon" className="bg-red-500/80 hover:bg-red-500 text-white rounded-full shrink-0 w-9 h-9">
                   <StopCircle className="w-4 h-4" />
                 </Button>
               ) : (
@@ -597,22 +593,21 @@ export default function Supernova() {
                   onClick={send}
                   disabled={!draft.trim() && attachments.length === 0}
                   size="icon"
-                  className="bg-gradient-to-br from-fuchsia-500 to-blue-600 hover:opacity-90 text-white rounded-xl shrink-0 disabled:opacity-40"
+                  className="bg-gradient-to-br from-blue-500 to-purple-600 hover:opacity-90 text-white rounded-full shrink-0 w-9 h-9 disabled:opacity-30"
                 >
                   <Send className="w-4 h-4" />
                 </Button>
               )}
             </div>
-            <p className="text-[10px] text-zinc-500 text-center">
-              Supernova can make mistakes. Conversations are saved to your account.
+            <p className="text-[10px] text-zinc-600 text-center">
+              Supernova may make mistakes. Check important info.
             </p>
           </div>
         </div>
       </main>
 
-      {/* Rename dialog */}
       <Dialog open={!!renameOpen} onOpenChange={(o) => !o && setRenameOpen(null)}>
-        <DialogContent className="bg-zinc-950 border-white/10 text-zinc-100">
+        <DialogContent className="bg-[#1e1f20] border-white/[0.08] text-zinc-100">
           <DialogHeader>
             <DialogTitle>Rename chat</DialogTitle>
           </DialogHeader>
@@ -621,12 +616,12 @@ export default function Supernova() {
             onChange={(e) =>
               setRenameOpen((r) => (r ? { ...r, title: e.target.value } : r))
             }
-            className="bg-zinc-900 border-white/10"
+            className="bg-[#131314] border-white/[0.08] rounded-xl"
           />
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRenameOpen(null)}>Cancel</Button>
             <Button
-              className="bg-blue-600 hover:bg-blue-500"
+              className="bg-gradient-to-r from-blue-500 to-purple-600 hover:opacity-90 rounded-full"
               onClick={async () => {
                 if (!user || !renameOpen) return;
                 await renameConversation(user.uid, renameOpen.id, renameOpen.title.trim() || "Untitled");
@@ -660,14 +655,14 @@ function MessageBubble({
       <div
         className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs font-semibold ${
           isUser
-            ? "bg-blue-600 text-white"
-            : "bg-gradient-to-br from-fuchsia-500 to-blue-500 text-white"
+            ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+            : "bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 text-white shadow-md shadow-purple-500/20"
         }`}
       >
-        {isUser ? "You" : <Sparkles className="w-4 h-4" />}
+        {isUser ? "U" : <Sparkles className="w-3.5 h-3.5" />}
       </div>
 
-      <div className={`max-w-[80%] space-y-2 ${isUser ? "items-end" : "items-start"} flex flex-col`}>
+      <div className={`max-w-[85%] space-y-2 ${isUser ? "items-end" : "items-start"} flex flex-col`}>
         {/* Attached / generated images */}
         {msg.images && msg.images.length > 0 && (
           <div className={`grid gap-2 ${msg.images.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
@@ -708,14 +703,14 @@ function MessageBubble({
           <div
             className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
               isUser
-                ? "bg-blue-600 text-white"
-                : "bg-zinc-900 border border-white/10 text-zinc-100"
+                ? "bg-blue-500/15 text-blue-100 border border-blue-500/20"
+                : "bg-transparent text-zinc-200"
             }`}
           >
             {isUser ? (
               <p className="whitespace-pre-wrap">{msg.content}</p>
             ) : (
-              <div className="prose prose-invert prose-sm max-w-none prose-p:my-1.5 prose-pre:my-2 prose-pre:bg-black/40 prose-code:text-blue-300">
+              <div className="prose prose-invert prose-sm max-w-none prose-p:my-1.5 prose-pre:my-2 prose-pre:bg-black/30 prose-pre:rounded-xl prose-code:text-purple-300">
                 <ReactMarkdown>{msg.content}</ReactMarkdown>
               </div>
             )}
