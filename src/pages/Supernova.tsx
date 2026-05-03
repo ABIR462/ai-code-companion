@@ -28,6 +28,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsMobile } from "@/hooks/use-mobile";
+import {
+  Drawer, DrawerContent, DrawerTrigger,
+} from "@/components/ui/drawer";
 import {
   appendMessage,
   createConversation,
@@ -95,6 +99,8 @@ export default function Supernova() {
   const [renameOpen, setRenameOpen] = useState<{ id: string; title: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // ── Subscribe to conversations
   useEffect(() => {
@@ -126,6 +132,11 @@ export default function Supernova() {
   useEffect(() => {
     if (window.innerWidth < 768) setSidebarOpen(false);
   }, []);
+
+  // On mobile, open drawer automatically when entering a convo
+  useEffect(() => {
+    if (isMobile && activeId) setDrawerOpen(true);
+  }, [isMobile, activeId]);
 
   const activeConvo = useMemo(
     () => convos.find((c) => c.id === activeId) ?? null,
@@ -334,6 +345,193 @@ export default function Supernova() {
     );
   }
 
+  /* ── Build chat panel (reused in both desktop & mobile drawer) ── */
+  const chatPanel = (
+    <div className="flex flex-col h-full bg-[#131314]">
+      {/* Messages */}
+      <div ref={scrollRef} className="flex-1 overflow-auto">
+        <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
+          {messages.length === 0 && !streamText ? (
+            <div className="flex flex-col items-center justify-center text-center pt-12 pb-8">
+              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 flex items-center justify-center mb-4 shadow-xl shadow-purple-500/25">
+                <Sparkles className="w-7 h-7" />
+              </div>
+              <h2 className="text-2xl font-semibold tracking-tight bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">
+                Hello{user.displayName ? `, ${user.displayName.split(" ")[0]}` : ""}
+              </h2>
+              <p className="text-zinc-500 mt-2 text-sm">How can I help you today?</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-8 w-full max-w-xl">
+                {SUGGESTED.map((s) => (
+                  <button
+                    key={s.text}
+                    onClick={() => { setDraft(s.text); if (s.image) setImageMode(true); }}
+                    className="text-left p-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.07] transition-all"
+                  >
+                    <div className="flex items-start gap-2">
+                      <span className="text-lg">{s.icon}</span>
+                      <span className="text-sm text-zinc-300 leading-snug">{s.text}</span>
+                    </div>
+                    {s.image && (
+                      <span className="mt-1 inline-block text-[10px] px-2 py-0.5 rounded-full bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/20">Image</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            messages.map((m) => <MessageBubble key={m.id} msg={m} onRerollImage={() => regenerateImage(m)} />)
+          )}
+          {streamText && (
+            <MessageBubble msg={{ role: "assistant", kind: "text", content: streamText }} streaming />
+          )}
+          {busy && !streamText && (
+            <div className="flex items-center gap-2 text-zinc-400 text-sm">
+              <Loader2 className="w-4 h-4 animate-spin" /> Thinking…
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Composer */}
+      <div className="bg-[#131314] pb-safe">
+        <div className="max-w-2xl mx-auto px-3 py-2 space-y-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setImageMode((v) => !v)}
+              className={`text-[11px] font-mono px-2.5 py-1 rounded-md border transition inline-flex items-center gap-1.5 ${
+                imageMode ? "bg-fuchsia-500/15 border-fuchsia-400/40 text-fuchsia-200" : "border-white/10 text-zinc-400 hover:text-white hover:border-white/30"
+              }`}
+            >
+              <ImageIcon className="w-3.5 h-3.5" />
+              {imageMode ? "🎨 Image" : "💬 Chat"}
+            </button>
+            {imageMode && (
+              <>
+                <select value={style} onChange={(e) => setStyle(e.target.value as ImageStyle)} className="text-[11px] bg-zinc-900 border border-white/10 rounded-md px-2 py-1 text-zinc-200">
+                  {STYLES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                </select>
+                <select value={ratio} onChange={(e) => setRatio(e.target.value as ImageRatio)} className="text-[11px] bg-zinc-900 border border-white/10 rounded-md px-2 py-1 text-zinc-200 font-mono">
+                  {RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </>
+            )}
+          </div>
+          {attachments.length > 0 && (
+            <div className="flex gap-2 flex-wrap">
+              {attachments.map((src, i) => (
+                <div key={i} className="relative w-14 h-14 rounded-lg overflow-hidden border border-white/10">
+                  <img src={src} alt="" className="w-full h-full object-cover" />
+                  <button onClick={() => removeAttachment(i)} className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/70 text-white flex items-center justify-center"><X className="w-3 h-3" /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-end gap-2 bg-[#1e1f20] rounded-2xl border border-white/[0.08] focus-within:border-purple-400/40 px-3 py-2 transition-all">
+            <label className="cursor-pointer text-zinc-400 hover:text-white p-1 shrink-0">
+              <Paperclip className="w-4 h-4" />
+              <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { onAttach(e.target.files); e.currentTarget.value = ""; }} />
+            </label>
+            <Textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+              placeholder={imageMode ? "Describe the image…" : "Message Supernova…"}
+              rows={1}
+              className="flex-1 min-h-[28px] max-h-32 resize-none bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-sm text-zinc-100 placeholder:text-zinc-500 px-1 py-0.5"
+            />
+            {busy ? (
+              <Button onClick={stop} size="icon" className="bg-red-500/80 hover:bg-red-500 text-white rounded-full shrink-0 w-8 h-8"><StopCircle className="w-4 h-4" /></Button>
+            ) : (
+              <Button onClick={send} disabled={!draft.trim() && attachments.length === 0} size="icon" className="bg-gradient-to-br from-blue-500 to-purple-600 hover:opacity-90 text-white rounded-full shrink-0 w-8 h-8 disabled:opacity-30"><Send className="w-4 h-4" /></Button>
+            )}
+          </div>
+          <p className="text-[10px] text-zinc-600 text-center">Powered by Gemini AI · Images via Imagen 4</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ── Mobile layout: drawer-based ── */
+  if (isMobile) {
+    return (
+      <div className="h-screen flex flex-col bg-[#131314] text-zinc-100">
+        {/* Top bar */}
+        <header className="h-12 px-4 flex items-center gap-2 border-b border-white/[0.06] shrink-0">
+          <Link to="/" className="text-zinc-400 hover:text-white"><ArrowLeft className="w-4 h-4" /></Link>
+          <div className="flex items-center gap-2 flex-1">
+            <span className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
+              <Sparkles className="w-3.5 h-3.5" />
+            </span>
+            <span className="font-semibold text-sm">Supernova</span>
+          </div>
+          <Button onClick={newChat} size="icon" variant="ghost" className="text-zinc-400 hover:text-white w-8 h-8">
+            <MessageSquarePlus className="w-4 h-4" />
+          </Button>
+        </header>
+
+        {/* Conversation list */}
+        <div className="flex-1 overflow-auto px-3 py-3 space-y-1">
+          {convos.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 flex items-center justify-center mb-4 shadow-xl shadow-purple-500/25">
+                <Sparkles className="w-8 h-8" />
+              </div>
+              <h2 className="text-xl font-semibold bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">Welcome to Supernova</h2>
+              <p className="text-zinc-500 text-sm mt-2">Start a new chat to begin</p>
+              <Button onClick={newChat} className="mt-6 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full gap-2">
+                <MessageSquarePlus className="w-4 h-4" /> New chat
+              </Button>
+            </div>
+          ) : (
+            convos.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => { setActiveId(c.id); setDrawerOpen(true); }}
+                className={`w-full text-left px-4 py-3 rounded-2xl flex items-center gap-3 transition ${
+                  activeId === c.id ? "bg-white/[0.08]" : "hover:bg-white/[0.04]"
+                }`}
+              >
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400/30 to-purple-500/30 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-4 h-4 text-purple-300" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm truncate text-zinc-200">{c.title}</p>
+                  <p className="text-[10px] text-zinc-500">Tap to open</p>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+
+        {/* Drawer for chat */}
+        <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
+          <DrawerContent className="h-[92vh] bg-[#131314] border-white/[0.08]">
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-white/[0.06]">
+              <button onClick={() => setDrawerOpen(false)} className="text-zinc-400 hover:text-white p-1"><ArrowLeft className="w-4 h-4" /></button>
+              <span className="text-sm font-medium truncate flex-1 text-zinc-200">{activeConvo?.title ?? "Chat"}</span>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              {chatPanel}
+            </div>
+          </DrawerContent>
+        </Drawer>
+
+        {/* Rename dialog */}
+        <Dialog open={!!renameOpen} onOpenChange={(o) => !o && setRenameOpen(null)}>
+          <DialogContent className="bg-[#1e1f20] border-white/[0.08] text-zinc-100">
+            <DialogHeader><DialogTitle>Rename chat</DialogTitle></DialogHeader>
+            <Input value={renameOpen?.title ?? ""} onChange={(e) => setRenameOpen((r) => (r ? { ...r, title: e.target.value } : r))} className="bg-[#131314] border-white/[0.08] rounded-xl" />
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setRenameOpen(null)}>Cancel</Button>
+              <Button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:opacity-90 rounded-full" onClick={async () => { if (!user || !renameOpen) return; await renameConversation(user.uid, renameOpen.id, renameOpen.title.trim() || "Untitled"); setRenameOpen(null); toast.success("Renamed"); }}>Save</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
+  /* ── Desktop layout (unchanged) ── */
   return (
     <div className="h-screen flex bg-[#131314] text-zinc-100">
       {/* ─── Sidebar ─── */}
@@ -443,177 +641,7 @@ export default function Supernova() {
           </h1>
         </header>
 
-        {/* Messages */}
-        <div ref={scrollRef} className="flex-1 overflow-auto">
-          <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
-            {messages.length === 0 && !streamText ? (
-              <div className="flex flex-col items-center justify-center text-center pt-20 pb-8">
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 flex items-center justify-center mb-5 shadow-xl shadow-purple-500/25">
-                  <Sparkles className="w-8 h-8" />
-                </div>
-                <h2 className="text-3xl font-semibold tracking-tight bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">
-                  Hello{user.displayName ? `, ${user.displayName.split(" ")[0]}` : ""}
-                </h2>
-                <p className="text-zinc-500 mt-2 text-base">How can I help you today?</p>
-
-                <div className="grid sm:grid-cols-2 gap-3 mt-10 w-full max-w-xl">
-                  {SUGGESTED.map((s) => (
-                    <button
-                      key={s.text}
-                      onClick={() => {
-                        setDraft(s.text);
-                        if (s.image) setImageMode(true);
-                      }}
-                      className="text-left p-4 rounded-2xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.07] transition-all hover:border-white/[0.15] hover:scale-[1.02]"
-                    >
-                      <div className="flex items-start gap-2">
-                        <span className="text-lg">{s.icon}</span>
-                        <span className="text-sm text-zinc-300 leading-snug">{s.text}</span>
-                      </div>
-                      {s.image && (
-                        <span className="mt-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/20">
-                          Image
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              messages.map((m) => <MessageBubble key={m.id} msg={m} onRerollImage={() => regenerateImage(m)} />)
-            )}
-
-            {streamText && (
-              <MessageBubble
-                msg={{ role: "assistant", kind: "text", content: streamText }}
-                streaming
-              />
-            )}
-
-            {busy && !streamText && (
-              <div className="flex items-center gap-2 text-zinc-400 text-sm">
-                <Loader2 className="w-4 h-4 animate-spin" /> Thinking…
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Composer */}
-        <div className="bg-[#131314]">
-          <div className="max-w-2xl mx-auto px-4 py-3 space-y-2">
-            {/* Mode + style row */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => setImageMode((v) => !v)}
-                className={`text-[11px] font-mono px-2.5 py-1 rounded-md border transition inline-flex items-center gap-1.5 ${
-                  imageMode
-                    ? "bg-fuchsia-500/15 border-fuchsia-400/40 text-fuchsia-200"
-                    : "border-white/10 text-zinc-400 hover:text-white hover:border-white/30"
-                }`}
-                title="Toggle image generation mode"
-              >
-                <ImageIcon className="w-3.5 h-3.5" />
-                {imageMode ? "🎨 Image mode" : "💬 Chat"}
-              </button>
-
-              {imageMode && (
-                <>
-                  <select
-                    value={style}
-                    onChange={(e) => setStyle(e.target.value as ImageStyle)}
-                    className="text-[11px] bg-zinc-900 border border-white/10 rounded-md px-2 py-1 text-zinc-200"
-                  >
-                    {STYLES.map((s) => (
-                      <option key={s.id} value={s.id}>{s.label}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={ratio}
-                    onChange={(e) => setRatio(e.target.value as ImageRatio)}
-                    className="text-[11px] bg-zinc-900 border border-white/10 rounded-md px-2 py-1 text-zinc-200 font-mono"
-                  >
-                    {RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                </>
-              )}
-
-              {!imageMode && (
-                <span className="text-[10px] text-zinc-500">
-                  Tip: type <code className="text-zinc-300 bg-white/5 px-1 rounded">/image a sunset</code> or switch to Image mode
-                </span>
-              )}
-            </div>
-
-            {/* Attachments preview */}
-            {attachments.length > 0 && (
-              <div className="flex gap-2 flex-wrap">
-                {attachments.map((src, i) => (
-                  <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-white/10">
-                    <img src={src} alt="" className="w-full h-full object-cover" />
-                    <button
-                      onClick={() => removeAttachment(i)}
-                      className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/70 text-white flex items-center justify-center"
-                      aria-label="Remove"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Input */}
-            <div className="flex items-end gap-2 bg-[#1e1f20] rounded-3xl border border-white/[0.08] focus-within:border-purple-400/40 px-4 py-2.5 transition-all shadow-lg shadow-black/20">
-              <label className="cursor-pointer text-zinc-400 hover:text-white p-1.5 shrink-0" title="Attach image">
-                <Paperclip className="w-4 h-4" />
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    onAttach(e.target.files);
-                    e.currentTarget.value = "";
-                  }}
-                />
-              </label>
-              <Textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    send();
-                  }
-                }}
-                placeholder={
-                  imageMode
-                    ? "Describe the image you want to generate…"
-                    : "Message Supernova — attach images, ask anything"
-                }
-                rows={1}
-                className="flex-1 min-h-[28px] max-h-40 resize-none bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-sm text-zinc-100 placeholder:text-zinc-500 px-1 py-1"
-              />
-              {busy ? (
-                <Button onClick={stop} size="icon" className="bg-red-500/80 hover:bg-red-500 text-white rounded-full shrink-0 w-9 h-9">
-                  <StopCircle className="w-4 h-4" />
-                </Button>
-              ) : (
-                <Button
-                  onClick={send}
-                  disabled={!draft.trim() && attachments.length === 0}
-                  size="icon"
-                  className="bg-gradient-to-br from-blue-500 to-purple-600 hover:opacity-90 text-white rounded-full shrink-0 w-9 h-9 disabled:opacity-30"
-                >
-                  <Send className="w-4 h-4" />
-                </Button>
-              )}
-            </div>
-            <p className="text-[10px] text-zinc-600 text-center">
-              Powered by Gemini AI · Images via Imagen 4
-            </p>
-          </div>
-        </div>
+        {chatPanel}
       </main>
 
       <Dialog open={!!renameOpen} onOpenChange={(o) => !o && setRenameOpen(null)}>
