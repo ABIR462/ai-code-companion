@@ -137,7 +137,7 @@ export async function streamChat(
   return full;
 }
 
-/* ───────────── Image generation (any style, not only realistic) ───────────── */
+/* ───────────── Image generation via Gemini Imagen 4 API ───────────── */
 
 export type ImageStyle =
   | "auto"
@@ -160,6 +160,15 @@ const RATIO_DIMS: Record<ImageRatio, { w: number; h: number }> = {
   "3:2":  { w: 1200, h: 800 },
   "2:3":  { w: 800, h: 1200 },
   "4:3":  { w: 1200, h: 900 },
+};
+
+const IMAGEN_RATIOS: Record<ImageRatio, string> = {
+  "1:1": "1:1",
+  "16:9": "16:9",
+  "9:16": "9:16",
+  "3:2": "4:3",   // closest supported
+  "2:3": "3:4",   // closest supported
+  "4:3": "4:3",
 };
 
 const STYLE_HINTS: Record<ImageStyle, string> = {
@@ -201,20 +210,6 @@ export function pollinationsUrl(prompt: string, ratio: ImageRatio, seed: number,
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${params.toString()}`;
 }
 
-/** Wait for an <img> to actually load — gives reliable progress + error UX. */
-export function loadImage(src: string, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) return reject(new Error("aborted"));
-    const img = new Image();
-    const onAbort = () => { img.src = ""; reject(new Error("aborted")); };
-    signal?.addEventListener("abort", onAbort, { once: true });
-    img.crossOrigin = "anonymous";
-    img.onload = () => { signal?.removeEventListener("abort", onAbort); resolve(); };
-    img.onerror = () => { signal?.removeEventListener("abort", onAbort); reject(new Error("Image render failed — try again")); };
-    img.src = src;
-  });
-}
-
 export async function generateImage(opts: {
   prompt: string;
   style?: ImageStyle;
@@ -222,20 +217,76 @@ export async function generateImage(opts: {
   count?: number;
   signal?: AbortSignal;
 }): Promise<GeneratedImage[]> {
+  if (!isGeminiConfigured) throw new Error("Gemini API key is not configured");
+
   const style = opts.style ?? "auto";
   const ratio = opts.ratio ?? "1:1";
   const count = Math.min(Math.max(opts.count ?? 1, 1), 4);
   const finalPrompt = buildImagePrompt(opts.prompt, style);
-  const out: GeneratedImage[] = [];
 
+  const imagenRatio = IMAGEN_RATIOS[ratio];
+  const url = `${GEMINI_BASE}/models/imagen-4.0-generate-001:predict?key=${appEnv.gemini.apiKey}`;
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal: opts.signal,
+    body: JSON.stringify({
+      instances: [{ prompt: finalPrompt }],
+      parameters: {
+        sampleCount: count,
+        aspectRatio: imagenRatio,
+      },
+    }),
+  });
+
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => "");
+    // Fallback to Pollinations if Imagen fails (e.g. safety filter)
+    console.warn("Imagen API failed, falling back to Pollinations:", resp.status, txt.slice(0, 200));
+    return fallbackPollinations(finalPrompt, style, ratio, count, opts.signal);
+  }
+
+  const data = await resp.json();
+  const predictions = data?.predictions ?? [];
+
+  if (!predictions.length) {
+    // Fallback if no predictions returned (safety filter etc.)
+    return fallbackPollinations(finalPrompt, style, ratio, count, opts.signal);
+  }
+
+  const out: GeneratedImage[] = [];
+  for (let i = 0; i < predictions.length; i++) {
+    const b64 = predictions[i]?.bytesBase64Encoded;
+    if (b64) {
+      const dataUrl = `data:image/png;base64,${b64}`;
+      out.push({ url: dataUrl, prompt: finalPrompt, style, ratio, seed: Date.now() + i });
+    }
+  }
+
+  return out.length ? out : fallbackPollinations(finalPrompt, style, ratio, count, opts.signal);
+}
+
+/** Fallback to Pollinations when Imagen API fails */
+async function fallbackPollinations(
+  prompt: string, style: ImageStyle, ratio: ImageRatio, count: number, signal?: AbortSignal
+): Promise<GeneratedImage[]> {
+  const out: GeneratedImage[] = [];
   for (let i = 0; i < count; i++) {
     const seed = Date.now() + Math.floor(Math.random() * 100000) + i;
-
-    // Use Pollinations (free, reliable, high-quality image generation)
-    const imageUrl = pollinationsUrl(finalPrompt, ratio, seed);
-    await loadImage(imageUrl, opts.signal);
-
-    out.push({ url: imageUrl, prompt: finalPrompt, style, ratio, seed });
+    const imageUrl = pollinationsUrl(prompt, ratio, seed);
+    // Pre-load
+    await new Promise<void>((resolve, reject) => {
+      if (signal?.aborted) return reject(new Error("aborted"));
+      const img = new window.Image();
+      const onAbort = () => { img.src = ""; reject(new Error("aborted")); };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      img.crossOrigin = "anonymous";
+      img.onload = () => { signal?.removeEventListener("abort", onAbort); resolve(); };
+      img.onerror = () => { signal?.removeEventListener("abort", onAbort); reject(new Error("Image failed")); };
+      img.src = imageUrl;
+    });
+    out.push({ url: imageUrl, prompt, style, ratio, seed });
   }
   return out;
 }
