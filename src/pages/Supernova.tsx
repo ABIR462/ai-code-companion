@@ -610,7 +610,7 @@ export default function Supernova() {
               )}
             </div>
             <p className="text-[10px] text-zinc-600 text-center">
-              Powered by Gemini AI · Images via Pollinations
+              Powered by Gemini AI · Images via Imagen 4
             </p>
           </div>
         </div>
