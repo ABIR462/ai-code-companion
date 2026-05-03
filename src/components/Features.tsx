@@ -1,6 +1,6 @@
 import {
   Wand2, MousePointer2, ShoppingBag, Flame,
-  Code2, Shield, Zap, Image,
+  Code2, Shield, Zap, Image, Sparkles,
 } from "lucide-react";
 
 const FEATURES = [
@@ -28,7 +28,7 @@ const FEATURES = [
   {
     icon: Image,
     title: "Real Image Integration",
-    desc: "Automatically pulls relevant, high-quality images from Unsplash and Picsum into your pages.",
+    desc: "AI-powered image generation via Gemini Imagen 4 — create stunning visuals directly from text prompts.",
     color: "text-orange-400",
     bg: "bg-orange-500/10 border-orange-500/20",
   },
@@ -59,6 +59,13 @@ const FEATURES = [
     desc: "See your page live in desktop, tablet, and mobile frames as it generates. No waiting.",
     color: "text-yellow-400",
     bg: "bg-yellow-500/10 border-yellow-500/20",
+  },
+  {
+    icon: Sparkles,
+    title: "Supernova AI Studio",
+    desc: "Chat with Gemini AI and generate images with Imagen 4 — all in a beautiful, Gemini-inspired interface.",
+    color: "text-fuchsia-400",
+    bg: "bg-fuchsia-500/10 border-fuchsia-500/20",
   },
 ];
 
