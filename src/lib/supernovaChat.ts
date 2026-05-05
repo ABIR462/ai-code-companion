@@ -1,4 +1,4 @@
-import { appEnv, isMistralConfigured } from "@/lib/env";
+import { appEnv, isGeminiConfigured } from "@/lib/env";
 
 export type ChatPart =
   | { type: "text"; text: string }
@@ -9,15 +9,43 @@ export type ChatMessage = {
   content: string | ChatPart[];
 };
 
-const MISTRAL_VISION_MODEL = "pixtral-12b-2409";
-const MISTRAL_TEXT_MODEL = appEnv.mistral.model || "mistral-small-latest";
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
+const CHAT_MODEL = "gemini-flash-latest";
 
-function headers() {
-  return {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-    Authorization: `Bearer ${appEnv.mistral.apiKey}`,
-  };
+/* ── Convert our ChatMessage[] to Gemini format ── */
+function toGeminiContents(messages: ChatMessage[]) {
+  const systemInstruction: string[] = [];
+  const contents: any[] = [];
+
+  for (const m of messages) {
+    if (m.role === "system") {
+      systemInstruction.push(typeof m.content === "string" ? m.content : m.content.filter(p => p.type === "text").map(p => (p as any).text).join("\n"));
+      continue;
+    }
+    const role = m.role === "assistant" ? "model" : "user";
+    const parts: any[] = [];
+    if (typeof m.content === "string") {
+      parts.push({ text: m.content });
+    } else {
+      for (const p of m.content) {
+        if (p.type === "text") {
+          parts.push({ text: p.text });
+        } else if (p.type === "image_url") {
+          const url = p.image_url.url;
+          if (url.startsWith("data:")) {
+            const match = url.match(/^data:(image\/\w+);base64,(.+)/);
+            if (match) {
+              parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+            }
+          } else {
+            parts.push({ text: `[Image: ${url}]` });
+          }
+        }
+      }
+    }
+    if (parts.length) contents.push({ role, parts });
+  }
+  return { systemInstruction: systemInstruction.length ? { parts: [{ text: systemInstruction.join("\n") }] } : undefined, contents };
 }
 
 /** Fast non-streaming chat used for short replies and image captions. */
@@ -25,25 +53,28 @@ export async function chatOnce(
   messages: ChatMessage[],
   options: { vision?: boolean; signal?: AbortSignal; maxTokens?: number; temperature?: number } = {},
 ): Promise<string> {
-  if (!isMistralConfigured) throw new Error("Mistral API key is not configured");
-  const model = options.vision ? MISTRAL_VISION_MODEL : MISTRAL_TEXT_MODEL;
-  const resp = await fetch(appEnv.mistral.chatEndpoint, {
+  if (!isGeminiConfigured) throw new Error("Gemini API key is not configured");
+  const { systemInstruction, contents } = toGeminiContents(messages);
+  const url = `${GEMINI_BASE}/models/${CHAT_MODEL}:generateContent?key=${appEnv.gemini.apiKey}`;
+  const resp = await fetch(url, {
     method: "POST",
-    headers: headers(),
+    headers: { "Content-Type": "application/json" },
     signal: options.signal,
     body: JSON.stringify({
-      model,
-      messages,
-      temperature: options.temperature ?? 0.5,
-      max_tokens: options.maxTokens ?? 1024,
+      ...(systemInstruction ? { systemInstruction } : {}),
+      contents,
+      generationConfig: {
+        temperature: options.temperature ?? 0.5,
+        maxOutputTokens: options.maxTokens ?? 1024,
+      },
     }),
   });
   if (!resp.ok) {
     const txt = await resp.text().catch(() => "");
-    throw new Error(`Mistral ${resp.status}: ${txt.slice(0, 200)}`);
+    throw new Error(`Gemini ${resp.status}: ${txt.slice(0, 200)}`);
   }
   const data = await resp.json();
-  return String(data?.choices?.[0]?.message?.content ?? "").trim();
+  return String(data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "").trim();
 }
 
 /** Streaming chat that emits deltas; supports text + image inputs (vision auto). */
@@ -52,29 +83,27 @@ export async function streamChat(
   onDelta: (chunk: string, full: string) => void,
   options: { signal?: AbortSignal; maxTokens?: number; temperature?: number } = {},
 ): Promise<string> {
-  if (!isMistralConfigured) throw new Error("Mistral API key is not configured");
+  if (!isGeminiConfigured) throw new Error("Gemini API key is not configured");
 
-  const usesImages = messages.some(
-    (m) => Array.isArray(m.content) && m.content.some((p) => p.type === "image_url"),
-  );
-  const model = usesImages ? MISTRAL_VISION_MODEL : MISTRAL_TEXT_MODEL;
-
-  const resp = await fetch(appEnv.mistral.chatEndpoint, {
+  const { systemInstruction, contents } = toGeminiContents(messages);
+  const url = `${GEMINI_BASE}/models/${CHAT_MODEL}:streamGenerateContent?alt=sse&key=${appEnv.gemini.apiKey}`;
+  const resp = await fetch(url, {
     method: "POST",
-    headers: headers(),
+    headers: { "Content-Type": "application/json" },
     signal: options.signal,
     body: JSON.stringify({
-      model,
-      messages,
-      temperature: options.temperature ?? 0.6,
-      max_tokens: options.maxTokens ?? 2048,
-      stream: true,
+      ...(systemInstruction ? { systemInstruction } : {}),
+      contents,
+      generationConfig: {
+        temperature: options.temperature ?? 0.6,
+        maxOutputTokens: options.maxTokens ?? 2048,
+      },
     }),
   });
 
   if (!resp.ok || !resp.body) {
     const txt = await resp.text().catch(() => "");
-    throw new Error(`Mistral ${resp.status}: ${txt.slice(0, 200)}`);
+    throw new Error(`Gemini ${resp.status}: ${txt.slice(0, 200)}`);
   }
 
   const reader = resp.body.getReader();
@@ -95,21 +124,20 @@ export async function streamChat(
       if (!payload || payload === "[DONE]") continue;
       try {
         const json = JSON.parse(payload);
-        const delta = json?.choices?.[0]?.delta?.content;
+        const delta = json?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (typeof delta === "string" && delta) {
           full += delta;
           onDelta(delta, full);
         }
       } catch {
-        buffer = line + "\n" + buffer;
-        break;
+        // partial JSON, skip
       }
     }
   }
   return full;
 }
 
-/* ───────────── Image generation (any style, not only realistic) ───────────── */
+/* ───────────── Image generation via Gemini Imagen 4 API ───────────── */
 
 export type ImageStyle =
   | "auto"
@@ -132,6 +160,15 @@ const RATIO_DIMS: Record<ImageRatio, { w: number; h: number }> = {
   "3:2":  { w: 1200, h: 800 },
   "2:3":  { w: 800, h: 1200 },
   "4:3":  { w: 1200, h: 900 },
+};
+
+const IMAGEN_RATIOS: Record<ImageRatio, string> = {
+  "1:1": "1:1",
+  "16:9": "16:9",
+  "9:16": "9:16",
+  "3:2": "4:3",   // closest supported
+  "2:3": "3:4",   // closest supported
+  "4:3": "4:3",
 };
 
 const STYLE_HINTS: Record<ImageStyle, string> = {
@@ -173,20 +210,6 @@ export function pollinationsUrl(prompt: string, ratio: ImageRatio, seed: number,
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${params.toString()}`;
 }
 
-/** Wait for an <img> to actually load — gives reliable progress + error UX. */
-export function loadImage(src: string, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) return reject(new Error("aborted"));
-    const img = new Image();
-    const onAbort = () => { img.src = ""; reject(new Error("aborted")); };
-    signal?.addEventListener("abort", onAbort, { once: true });
-    img.crossOrigin = "anonymous";
-    img.onload = () => { signal?.removeEventListener("abort", onAbort); resolve(); };
-    img.onerror = () => { signal?.removeEventListener("abort", onAbort); reject(new Error("Image render failed — try again")); };
-    img.src = src;
-  });
-}
-
 export async function generateImage(opts: {
   prompt: string;
   style?: ImageStyle;
@@ -194,16 +217,76 @@ export async function generateImage(opts: {
   count?: number;
   signal?: AbortSignal;
 }): Promise<GeneratedImage[]> {
+  if (!isGeminiConfigured) throw new Error("Gemini API key is not configured");
+
   const style = opts.style ?? "auto";
   const ratio = opts.ratio ?? "1:1";
   const count = Math.min(Math.max(opts.count ?? 1, 1), 4);
   const finalPrompt = buildImagePrompt(opts.prompt, style);
+
+  const imagenRatio = IMAGEN_RATIOS[ratio];
+  const url = `${GEMINI_BASE}/models/imagen-4.0-generate-001:predict?key=${appEnv.gemini.apiKey}`;
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal: opts.signal,
+    body: JSON.stringify({
+      instances: [{ prompt: finalPrompt }],
+      parameters: {
+        sampleCount: count,
+        aspectRatio: imagenRatio,
+      },
+    }),
+  });
+
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => "");
+    // Fallback to Pollinations if Imagen fails (e.g. safety filter)
+    console.warn("Imagen API failed, falling back to Pollinations:", resp.status, txt.slice(0, 200));
+    return fallbackPollinations(finalPrompt, style, ratio, count, opts.signal);
+  }
+
+  const data = await resp.json();
+  const predictions = data?.predictions ?? [];
+
+  if (!predictions.length) {
+    // Fallback if no predictions returned (safety filter etc.)
+    return fallbackPollinations(finalPrompt, style, ratio, count, opts.signal);
+  }
+
+  const out: GeneratedImage[] = [];
+  for (let i = 0; i < predictions.length; i++) {
+    const b64 = predictions[i]?.bytesBase64Encoded;
+    if (b64) {
+      const dataUrl = `data:image/png;base64,${b64}`;
+      out.push({ url: dataUrl, prompt: finalPrompt, style, ratio, seed: Date.now() + i });
+    }
+  }
+
+  return out.length ? out : fallbackPollinations(finalPrompt, style, ratio, count, opts.signal);
+}
+
+/** Fallback to Pollinations when Imagen API fails */
+async function fallbackPollinations(
+  prompt: string, style: ImageStyle, ratio: ImageRatio, count: number, signal?: AbortSignal
+): Promise<GeneratedImage[]> {
   const out: GeneratedImage[] = [];
   for (let i = 0; i < count; i++) {
     const seed = Date.now() + Math.floor(Math.random() * 100000) + i;
-    const url = pollinationsUrl(finalPrompt, ratio, seed);
-    await loadImage(url, opts.signal);
-    out.push({ url, prompt: finalPrompt, style, ratio, seed });
+    const imageUrl = pollinationsUrl(prompt, ratio, seed);
+    // Pre-load
+    await new Promise<void>((resolve, reject) => {
+      if (signal?.aborted) return reject(new Error("aborted"));
+      const img = new window.Image();
+      const onAbort = () => { img.src = ""; reject(new Error("aborted")); };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      img.crossOrigin = "anonymous";
+      img.onload = () => { signal?.removeEventListener("abort", onAbort); resolve(); };
+      img.onerror = () => { signal?.removeEventListener("abort", onAbort); reject(new Error("Image failed")); };
+      img.src = imageUrl;
+    });
+    out.push({ url: imageUrl, prompt, style, ratio, seed });
   }
   return out;
 }

@@ -1,8 +1,7 @@
 import { MISTRAL_CHAT_URL, MISTRAL_MODEL, explainMistralError, getMistralHeaders, hasMistralConfig } from "@/lib/mistral";
-import { callSambaNovaChat, hasSambaNovaConfig } from "@/lib/sambanova";
 
 export type AIMessage = { role: string; content: string };
-export type AIProvider = "Mistral" | "SambaNova";
+export type AIProvider = "Mistral";
 
 async function withTimeout<T>(
   task: (signal: AbortSignal) => Promise<T>,
@@ -32,8 +31,8 @@ async function callMistral(messages: AIMessage[], signal?: AbortSignal, attempt 
     body: JSON.stringify({
       model: MISTRAL_MODEL,
       messages,
-      temperature: 0.15,
-      max_tokens: 4096,
+      temperature: 0.1,
+      max_tokens: 8192,
     }),
   });
 
@@ -63,7 +62,7 @@ async function callMistral(messages: AIMessage[], signal?: AbortSignal, attempt 
 export async function streamWebsiteAI(
   messages: AIMessage[],
   onDelta: (chunk: string, full: string) => void,
-  options: { timeoutMs?: number; prefer?: "mistral" | "sambanova"; signal?: AbortSignal } = {},
+  options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<{ content: string; provider: AIProvider }> {
   const errors: string[] = [];
 
@@ -80,8 +79,8 @@ export async function streamWebsiteAI(
       body: JSON.stringify({
         model,
         messages,
-        temperature: 0.15,
-        max_tokens: 4096,
+        temperature: 0.1,
+        max_tokens: 8192,
         stream: true,
       }),
     });
@@ -123,74 +122,45 @@ export async function streamWebsiteAI(
   };
 
   return withTimeout(async (signal) => {
-    const order = options.prefer === "sambanova" ? ["sambanova", "mistral"] : ["mistral", "sambanova"];
-    for (const provider of order) {
-      if (provider === "mistral" && hasMistralConfig) {
-        try {
-          const content = await tryStream(
-            MISTRAL_CHAT_URL,
-            getMistralHeaders() as any,
-            MISTRAL_MODEL,
-            signal,
-          );
-          if (content) return { content, provider: "Mistral" as const };
-          errors.push("Mistral returned empty stream");
-        } catch (e) {
-          errors.push(e instanceof Error ? e.message : "Mistral stream failed");
-        }
-      }
-      if (provider === "sambanova" && hasSambaNovaConfig()) {
-        // SambaNova fallback: non-streaming, emit once.
-        try {
-          const content = await callSambaNovaChat(messages, { signal, maxTokens: 4096, temperature: 0.1 });
-          if (content) {
-            onDelta(content, content);
-            return { content, provider: "SambaNova" as const };
-          }
-          errors.push("SambaNova returned empty content");
-        } catch (e) {
-          errors.push(e instanceof Error ? e.message : "SambaNova failed");
-        }
+    if (hasMistralConfig) {
+      try {
+        const content = await tryStream(
+          MISTRAL_CHAT_URL,
+          getMistralHeaders() as any,
+          MISTRAL_MODEL,
+          signal,
+        );
+        if (content) return { content, provider: "Mistral" as const };
+        errors.push("Mistral returned empty stream");
+      } catch (e) {
+        errors.push(e instanceof Error ? e.message : "Mistral stream failed");
       }
     }
-    throw new Error(errors.length ? errors.join(" | ") : "No AI provider configured");
+    throw new Error(errors.length ? errors.join(" | ") : "Mistral AI is not configured — check your API key");
   }, options.timeoutMs ?? 120_000, options.signal);
 }
 
 export async function completeWebsiteAI(
   messages: AIMessage[],
-  options: { timeoutMs?: number; prefer?: "mistral" | "sambanova" } = {},
+  options: { timeoutMs?: number } = {},
 ): Promise<{ content: string; provider: AIProvider }> {
   const errors: string[] = [];
-  const order = options.prefer === "sambanova" ? ["sambanova", "mistral"] : ["mistral", "sambanova"];
 
   return withTimeout(async (signal) => {
-    for (const provider of order) {
-      if (provider === "mistral" && hasMistralConfig) {
-        try {
-          const content = await callMistral(messages, signal);
-          if (content) return { content, provider: "Mistral" as const };
-          errors.push("Mistral returned empty content");
-        } catch (error) {
-          errors.push(error instanceof Error ? error.message : "Mistral failed");
-        }
-      }
-
-      if (provider === "sambanova" && hasSambaNovaConfig()) {
-        try {
-          const content = await callSambaNovaChat(messages, { signal, maxTokens: 4096, temperature: 0.1 });
-          if (content) return { content, provider: "SambaNova" as const };
-          errors.push("SambaNova returned empty content");
-        } catch (error) {
-          errors.push(error instanceof Error ? error.message : "SambaNova failed");
-        }
+    if (hasMistralConfig) {
+      try {
+        const content = await callMistral(messages, signal);
+        if (content) return { content, provider: "Mistral" as const };
+        errors.push("Mistral returned empty content");
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : "Mistral failed");
       }
     }
 
     throw new Error(
       errors.length
         ? errors.join(" | ")
-        : "No AI provider is configured. Add Mistral or SambaNova API settings.",
+        : "Mistral AI is not configured. Check your API key.",
     );
   }, options.timeoutMs ?? 90_000);
 }

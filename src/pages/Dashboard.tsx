@@ -398,7 +398,7 @@ export default function Dashboard() {
           role: "user",
           content: `Improve this existing page and output the FULL updated HTML only. Prompt: ${active.prompt}\n\nCurrent HTML:\n${editedHtml || active.html}`,
         },
-      ], { prefer: "sambanova", timeoutMs: 90_000 });
+     ], { timeoutMs: 90_000 });
       const html = ensureHTML(cleanHTML(result.content));
       if (html.length <= 80) throw new Error("AI returned an incomplete page");
       setEditedHtml(html);

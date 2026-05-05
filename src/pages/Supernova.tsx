@@ -28,6 +28,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsMobile } from "@/hooks/use-mobile";
+import {
+  Drawer, DrawerContent, DrawerTrigger,
+} from "@/components/ui/drawer";
 import {
   appendMessage,
   createConversation,
@@ -66,10 +70,10 @@ const STYLES: { id: ImageStyle; label: string }[] = [
 const RATIOS: ImageRatio[] = ["1:1", "16:9", "9:16", "3:2", "2:3", "4:3"];
 
 const SUGGESTED = [
-  { icon: "🎨", text: "Create a cinematic poster of a lone astronaut on a neon planet" },
-  { icon: "🐉", text: "Anime illustration of a friendly dragon over a mountain village" },
-  { icon: "🖼️", text: "Minimal vector logo for a coffee brand called 'North'" },
-  { icon: "💡", text: "Explain quantum entanglement in 3 short paragraphs" },
+  { icon: "🖼️", text: "Generate a cinematic poster of an astronaut on a neon planet", image: true },
+  { icon: "🎨", text: "Draw a watercolor of a Japanese garden in autumn", image: true },
+  { icon: "💡", text: "Explain quantum computing like I'm 10 years old", image: false },
+  { icon: "📝", text: "Write a creative short story about time travel", image: false },
 ];
 
 function autoTitle(text: string) {
@@ -95,6 +99,8 @@ export default function Supernova() {
   const [renameOpen, setRenameOpen] = useState<{ id: string; title: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // ── Subscribe to conversations
   useEffect(() => {
@@ -126,6 +132,11 @@ export default function Supernova() {
   useEffect(() => {
     if (window.innerWidth < 768) setSidebarOpen(false);
   }, []);
+
+  // On mobile, open drawer automatically when entering a convo
+  useEffect(() => {
+    if (isMobile && activeId) setDrawerOpen(true);
+  }, [isMobile, activeId]);
 
   const activeConvo = useMemo(
     () => convos.find((c) => c.id === activeId) ?? null,
@@ -334,38 +345,227 @@ export default function Supernova() {
     );
   }
 
+  /* ── Build chat panel (reused in both desktop & mobile drawer) ── */
+  const chatPanel = (
+    <div className="flex flex-col h-full bg-[#131314]">
+      {/* Messages */}
+      <div ref={scrollRef} className="flex-1 overflow-auto">
+        <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
+          {messages.length === 0 && !streamText ? (
+            <div className="flex flex-col items-center justify-center text-center pt-12 pb-8">
+              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 flex items-center justify-center mb-4 shadow-xl shadow-purple-500/25">
+                <Sparkles className="w-7 h-7" />
+              </div>
+              <h2 className="text-2xl font-semibold tracking-tight bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">
+                Hello{user.displayName ? `, ${user.displayName.split(" ")[0]}` : ""}
+              </h2>
+              <p className="text-zinc-500 mt-2 text-sm">How can I help you today?</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-8 w-full max-w-xl">
+                {SUGGESTED.map((s) => (
+                  <button
+                    key={s.text}
+                    onClick={() => { setDraft(s.text); if (s.image) setImageMode(true); }}
+                    className="text-left p-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.07] transition-all"
+                  >
+                    <div className="flex items-start gap-2">
+                      <span className="text-lg">{s.icon}</span>
+                      <span className="text-sm text-zinc-300 leading-snug">{s.text}</span>
+                    </div>
+                    {s.image && (
+                      <span className="mt-1 inline-block text-[10px] px-2 py-0.5 rounded-full bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/20">Image</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            messages.map((m) => <MessageBubble key={m.id} msg={m} onRerollImage={() => regenerateImage(m)} />)
+          )}
+          {streamText && (
+            <MessageBubble msg={{ role: "assistant", kind: "text", content: streamText }} streaming />
+          )}
+          {busy && !streamText && (
+            <div className="flex items-center gap-2 text-zinc-400 text-sm">
+              <Loader2 className="w-4 h-4 animate-spin" /> Thinking…
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Composer */}
+      <div className="bg-[#131314] pb-safe">
+        <div className="max-w-2xl mx-auto px-3 py-2 space-y-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setImageMode((v) => !v)}
+              className={`text-[11px] font-mono px-2.5 py-1 rounded-md border transition inline-flex items-center gap-1.5 ${
+                imageMode ? "bg-fuchsia-500/15 border-fuchsia-400/40 text-fuchsia-200" : "border-white/10 text-zinc-400 hover:text-white hover:border-white/30"
+              }`}
+            >
+              <ImageIcon className="w-3.5 h-3.5" />
+              {imageMode ? "🎨 Image" : "💬 Chat"}
+            </button>
+            {imageMode && (
+              <>
+                <select value={style} onChange={(e) => setStyle(e.target.value as ImageStyle)} className="text-[11px] bg-zinc-900 border border-white/10 rounded-md px-2 py-1 text-zinc-200">
+                  {STYLES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                </select>
+                <select value={ratio} onChange={(e) => setRatio(e.target.value as ImageRatio)} className="text-[11px] bg-zinc-900 border border-white/10 rounded-md px-2 py-1 text-zinc-200 font-mono">
+                  {RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </>
+            )}
+          </div>
+          {attachments.length > 0 && (
+            <div className="flex gap-2 flex-wrap">
+              {attachments.map((src, i) => (
+                <div key={i} className="relative w-14 h-14 rounded-lg overflow-hidden border border-white/10">
+                  <img src={src} alt="" className="w-full h-full object-cover" />
+                  <button onClick={() => removeAttachment(i)} className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/70 text-white flex items-center justify-center"><X className="w-3 h-3" /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-end gap-2 bg-[#1e1f20] rounded-2xl border border-white/[0.08] focus-within:border-purple-400/40 px-3 py-2 transition-all">
+            <label className="cursor-pointer text-zinc-400 hover:text-white p-1 shrink-0">
+              <Paperclip className="w-4 h-4" />
+              <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { onAttach(e.target.files); e.currentTarget.value = ""; }} />
+            </label>
+            <Textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+              placeholder={imageMode ? "Describe the image…" : "Message Supernova…"}
+              rows={1}
+              className="flex-1 min-h-[28px] max-h-32 resize-none bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-sm text-zinc-100 placeholder:text-zinc-500 px-1 py-0.5"
+            />
+            {busy ? (
+              <Button onClick={stop} size="icon" className="bg-red-500/80 hover:bg-red-500 text-white rounded-full shrink-0 w-8 h-8"><StopCircle className="w-4 h-4" /></Button>
+            ) : (
+              <Button onClick={send} disabled={!draft.trim() && attachments.length === 0} size="icon" className="bg-gradient-to-br from-blue-500 to-purple-600 hover:opacity-90 text-white rounded-full shrink-0 w-8 h-8 disabled:opacity-30"><Send className="w-4 h-4" /></Button>
+            )}
+          </div>
+          <p className="text-[10px] text-zinc-600 text-center">Powered by Gemini AI · Images via Imagen 4</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ── Mobile layout: drawer-based ── */
+  if (isMobile) {
+    return (
+      <div className="h-screen flex flex-col bg-[#131314] text-zinc-100">
+        {/* Top bar */}
+        <header className="h-12 px-4 flex items-center gap-2 border-b border-white/[0.06] shrink-0">
+          <Link to="/" className="text-zinc-400 hover:text-white"><ArrowLeft className="w-4 h-4" /></Link>
+          <div className="flex items-center gap-2 flex-1">
+            <span className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
+              <Sparkles className="w-3.5 h-3.5" />
+            </span>
+            <span className="font-semibold text-sm">Supernova</span>
+          </div>
+          <Button onClick={newChat} size="icon" variant="ghost" className="text-zinc-400 hover:text-white w-8 h-8">
+            <MessageSquarePlus className="w-4 h-4" />
+          </Button>
+        </header>
+
+        {/* Conversation list */}
+        <div className="flex-1 overflow-auto px-3 py-3 space-y-1">
+          {convos.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 flex items-center justify-center mb-4 shadow-xl shadow-purple-500/25">
+                <Sparkles className="w-8 h-8" />
+              </div>
+              <h2 className="text-xl font-semibold bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">Welcome to Supernova</h2>
+              <p className="text-zinc-500 text-sm mt-2">Start a new chat to begin</p>
+              <Button onClick={newChat} className="mt-6 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full gap-2">
+                <MessageSquarePlus className="w-4 h-4" /> New chat
+              </Button>
+            </div>
+          ) : (
+            convos.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => { setActiveId(c.id); setDrawerOpen(true); }}
+                className={`w-full text-left px-4 py-3 rounded-2xl flex items-center gap-3 transition ${
+                  activeId === c.id ? "bg-white/[0.08]" : "hover:bg-white/[0.04]"
+                }`}
+              >
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400/30 to-purple-500/30 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-4 h-4 text-purple-300" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm truncate text-zinc-200">{c.title}</p>
+                  <p className="text-[10px] text-zinc-500">Tap to open</p>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+
+        {/* Drawer for chat */}
+        <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
+          <DrawerContent className="h-[92vh] bg-[#131314] border-white/[0.08]">
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-white/[0.06]">
+              <button onClick={() => setDrawerOpen(false)} className="text-zinc-400 hover:text-white p-1"><ArrowLeft className="w-4 h-4" /></button>
+              <span className="text-sm font-medium truncate flex-1 text-zinc-200">{activeConvo?.title ?? "Chat"}</span>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              {chatPanel}
+            </div>
+          </DrawerContent>
+        </Drawer>
+
+        {/* Rename dialog */}
+        <Dialog open={!!renameOpen} onOpenChange={(o) => !o && setRenameOpen(null)}>
+          <DialogContent className="bg-[#1e1f20] border-white/[0.08] text-zinc-100">
+            <DialogHeader><DialogTitle>Rename chat</DialogTitle></DialogHeader>
+            <Input value={renameOpen?.title ?? ""} onChange={(e) => setRenameOpen((r) => (r ? { ...r, title: e.target.value } : r))} className="bg-[#131314] border-white/[0.08] rounded-xl" />
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setRenameOpen(null)}>Cancel</Button>
+              <Button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:opacity-90 rounded-full" onClick={async () => { if (!user || !renameOpen) return; await renameConversation(user.uid, renameOpen.id, renameOpen.title.trim() || "Untitled"); setRenameOpen(null); toast.success("Renamed"); }}>Save</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
+  /* ── Desktop layout (unchanged) ── */
   return (
-    <div className="h-screen flex bg-zinc-950 text-zinc-100">
+    <div className="h-screen flex bg-[#131314] text-zinc-100">
       {/* ─── Sidebar ─── */}
       <aside
         className={`${
           sidebarOpen ? "w-72" : "w-0"
-        } shrink-0 transition-[width] duration-200 overflow-hidden border-r border-white/5 bg-zinc-950/95 backdrop-blur flex flex-col`}
+        } shrink-0 transition-[width] duration-200 overflow-hidden border-r border-white/[0.06] bg-[#1e1f20] flex flex-col`}
       >
         <div className="p-3 flex items-center gap-2 border-b border-white/5">
           <Link to="/" className="text-zinc-400 hover:text-white" aria-label="Home">
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div className="flex items-center gap-2 flex-1">
-            <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-fuchsia-500 to-blue-500 flex items-center justify-center">
-              <Wand2 className="w-3.5 h-3.5" />
+            <span className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
+              <Sparkles className="w-4 h-4" />
             </span>
-            <span className="font-semibold text-sm tracking-wide">Supernova</span>
+            <span className="font-semibold text-base">Supernova</span>
           </div>
         </div>
 
         <div className="p-3">
           <Button
             onClick={newChat}
-            className="w-full justify-start gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-100"
+            className="w-full justify-start gap-2 bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-100 rounded-full h-10"
           >
             <MessageSquarePlus className="w-4 h-4" /> New chat
           </Button>
         </div>
 
-        <div className="px-2 pb-2 text-[10px] uppercase tracking-wider text-zinc-500 font-mono">
-          Recent · {convos.length}
-        </div>
+        {convos.length > 0 && (
+          <div className="px-3 pb-1 pt-2 text-[11px] font-medium text-zinc-500">
+            Recent
+          </div>
+        )}
 
         <nav className="flex-1 overflow-auto px-2 space-y-0.5">
           {convos.length === 0 ? (
@@ -376,8 +576,8 @@ export default function Supernova() {
             convos.map((c) => (
               <div
                 key={c.id}
-                className={`group rounded-lg flex items-center gap-1 ${
-                  activeId === c.id ? "bg-white/10" : "hover:bg-white/5"
+                className={`group rounded-full flex items-center gap-1 ${
+                  activeId === c.id ? "bg-white/[0.08]" : "hover:bg-white/[0.04]"
                 }`}
               >
                 <button
@@ -405,12 +605,12 @@ export default function Supernova() {
           )}
         </nav>
 
-        <div className="p-3 border-t border-white/5 flex items-center gap-2">
+        <div className="p-3 border-t border-white/[0.06] flex items-center gap-2">
           {user.photoURL ? (
-            <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full" />
+            <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full ring-2 ring-white/10" />
           ) : (
-            <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
-              <UserIcon className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold">
+              {(user.displayName || user.email || "U")[0].toUpperCase()}
             </div>
           )}
           <div className="flex-1 min-w-0">
@@ -428,191 +628,24 @@ export default function Supernova() {
       {/* ─── Main ─── */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="h-12 px-3 flex items-center gap-2 border-b border-white/5">
+        <header className="h-12 px-4 flex items-center gap-2 border-b border-white/[0.06]">
           <button
             onClick={() => setSidebarOpen((s) => !s)}
-            className="p-2 rounded-md hover:bg-white/5 text-zinc-400 hover:text-white"
+            className="p-2 rounded-full hover:bg-white/[0.06] text-zinc-400 hover:text-white"
             aria-label="Toggle sidebar"
           >
             <Menu className="w-4 h-4" />
           </button>
-          <h1 className="text-sm font-medium truncate flex-1">
-            {activeConvo?.title ?? "New chat"}
+          <h1 className="text-sm font-medium truncate flex-1 text-zinc-300">
+            {activeConvo?.title ?? "Supernova"}
           </h1>
-          <Link
-            to="/build"
-            className="text-xs text-zinc-400 hover:text-white px-2 py-1 rounded-md hover:bg-white/5"
-          >
-            Open IDE
-          </Link>
         </header>
 
-        {/* Messages */}
-        <div ref={scrollRef} className="flex-1 overflow-auto">
-          <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
-            {messages.length === 0 && !streamText ? (
-              <div className="flex flex-col items-center justify-center text-center pt-16 pb-8">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-fuchsia-500 to-blue-500 flex items-center justify-center mb-4">
-                  <Sparkles className="w-7 h-7" />
-                </div>
-                <h2 className="text-3xl font-semibold tracking-tight">
-                  Hello{user.displayName ? `, ${user.displayName.split(" ")[0]}` : ""}
-                </h2>
-                <p className="text-zinc-400 mt-2">How can I help you today?</p>
-
-                <div className="grid sm:grid-cols-2 gap-2 mt-8 w-full max-w-2xl">
-                  {SUGGESTED.map((s) => (
-                    <button
-                      key={s.text}
-                      onClick={() => setDraft(s.text)}
-                      className="text-left p-3 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] transition"
-                    >
-                      <span className="text-base mr-2">{s.icon}</span>
-                      <span className="text-sm text-zinc-200">{s.text}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              messages.map((m) => <MessageBubble key={m.id} msg={m} onRerollImage={() => regenerateImage(m)} />)
-            )}
-
-            {streamText && (
-              <MessageBubble
-                msg={{ role: "assistant", kind: "text", content: streamText }}
-                streaming
-              />
-            )}
-
-            {busy && !streamText && (
-              <div className="flex items-center gap-2 text-zinc-400 text-sm">
-                <Loader2 className="w-4 h-4 animate-spin" /> Thinking…
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Composer */}
-        <div className="border-t border-white/5 bg-zinc-950">
-          <div className="max-w-3xl mx-auto px-4 py-3 space-y-2">
-            {/* Mode + style row */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => setImageMode((v) => !v)}
-                className={`text-[11px] font-mono px-2.5 py-1 rounded-md border transition inline-flex items-center gap-1.5 ${
-                  imageMode
-                    ? "bg-fuchsia-500/15 border-fuchsia-400/40 text-fuchsia-200"
-                    : "border-white/10 text-zinc-400 hover:text-white hover:border-white/30"
-                }`}
-                title="Toggle image generation mode"
-              >
-                <ImageIcon className="w-3.5 h-3.5" />
-                {imageMode ? "Image mode" : "Chat"}
-              </button>
-
-              {imageMode && (
-                <>
-                  <select
-                    value={style}
-                    onChange={(e) => setStyle(e.target.value as ImageStyle)}
-                    className="text-[11px] bg-zinc-900 border border-white/10 rounded-md px-2 py-1 text-zinc-200"
-                  >
-                    {STYLES.map((s) => (
-                      <option key={s.id} value={s.id}>{s.label}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={ratio}
-                    onChange={(e) => setRatio(e.target.value as ImageRatio)}
-                    className="text-[11px] bg-zinc-900 border border-white/10 rounded-md px-2 py-1 text-zinc-200 font-mono"
-                  >
-                    {RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                </>
-              )}
-
-              {!imageMode && (
-                <span className="text-[10px] text-zinc-500 font-mono">
-                  Tip: type <span className="text-zinc-300">/image a sunset</span> or attach a photo
-                </span>
-              )}
-            </div>
-
-            {/* Attachments preview */}
-            {attachments.length > 0 && (
-              <div className="flex gap-2 flex-wrap">
-                {attachments.map((src, i) => (
-                  <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-white/10">
-                    <img src={src} alt="" className="w-full h-full object-cover" />
-                    <button
-                      onClick={() => removeAttachment(i)}
-                      className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/70 text-white flex items-center justify-center"
-                      aria-label="Remove"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Input */}
-            <div className="flex items-end gap-2 bg-zinc-900 rounded-2xl border border-white/10 focus-within:border-blue-400/50 px-3 py-2 transition-colors">
-              <label className="cursor-pointer text-zinc-400 hover:text-white p-1.5 shrink-0" title="Attach image">
-                <Paperclip className="w-4 h-4" />
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    onAttach(e.target.files);
-                    e.currentTarget.value = "";
-                  }}
-                />
-              </label>
-              <Textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    send();
-                  }
-                }}
-                placeholder={
-                  imageMode
-                    ? "Describe the image you want to generate…"
-                    : "Message Supernova — attach images, ask anything"
-                }
-                rows={1}
-                className="flex-1 min-h-[28px] max-h-40 resize-none bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-sm text-zinc-100 placeholder:text-zinc-500 px-1 py-1"
-              />
-              {busy ? (
-                <Button onClick={stop} size="icon" className="bg-red-600 hover:bg-red-500 text-white rounded-xl shrink-0">
-                  <StopCircle className="w-4 h-4" />
-                </Button>
-              ) : (
-                <Button
-                  onClick={send}
-                  disabled={!draft.trim() && attachments.length === 0}
-                  size="icon"
-                  className="bg-gradient-to-br from-fuchsia-500 to-blue-600 hover:opacity-90 text-white rounded-xl shrink-0 disabled:opacity-40"
-                >
-                  <Send className="w-4 h-4" />
-                </Button>
-              )}
-            </div>
-            <p className="text-[10px] text-zinc-500 text-center">
-              Supernova can make mistakes. Conversations are saved to your account.
-            </p>
-          </div>
-        </div>
+        {chatPanel}
       </main>
 
-      {/* Rename dialog */}
       <Dialog open={!!renameOpen} onOpenChange={(o) => !o && setRenameOpen(null)}>
-        <DialogContent className="bg-zinc-950 border-white/10 text-zinc-100">
+        <DialogContent className="bg-[#1e1f20] border-white/[0.08] text-zinc-100">
           <DialogHeader>
             <DialogTitle>Rename chat</DialogTitle>
           </DialogHeader>
@@ -621,12 +654,12 @@ export default function Supernova() {
             onChange={(e) =>
               setRenameOpen((r) => (r ? { ...r, title: e.target.value } : r))
             }
-            className="bg-zinc-900 border-white/10"
+            className="bg-[#131314] border-white/[0.08] rounded-xl"
           />
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRenameOpen(null)}>Cancel</Button>
             <Button
-              className="bg-blue-600 hover:bg-blue-500"
+              className="bg-gradient-to-r from-blue-500 to-purple-600 hover:opacity-90 rounded-full"
               onClick={async () => {
                 if (!user || !renameOpen) return;
                 await renameConversation(user.uid, renameOpen.id, renameOpen.title.trim() || "Untitled");
@@ -660,14 +693,14 @@ function MessageBubble({
       <div
         className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs font-semibold ${
           isUser
-            ? "bg-blue-600 text-white"
-            : "bg-gradient-to-br from-fuchsia-500 to-blue-500 text-white"
+            ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+            : "bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 text-white shadow-md shadow-purple-500/20"
         }`}
       >
-        {isUser ? "You" : <Sparkles className="w-4 h-4" />}
+        {isUser ? "U" : <Sparkles className="w-3.5 h-3.5" />}
       </div>
 
-      <div className={`max-w-[80%] space-y-2 ${isUser ? "items-end" : "items-start"} flex flex-col`}>
+      <div className={`max-w-[85%] space-y-2 ${isUser ? "items-end" : "items-start"} flex flex-col`}>
         {/* Attached / generated images */}
         {msg.images && msg.images.length > 0 && (
           <div className={`grid gap-2 ${msg.images.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
@@ -708,14 +741,14 @@ function MessageBubble({
           <div
             className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
               isUser
-                ? "bg-blue-600 text-white"
-                : "bg-zinc-900 border border-white/10 text-zinc-100"
+                ? "bg-blue-500/15 text-blue-100 border border-blue-500/20"
+                : "bg-transparent text-zinc-200"
             }`}
           >
             {isUser ? (
               <p className="whitespace-pre-wrap">{msg.content}</p>
             ) : (
-              <div className="prose prose-invert prose-sm max-w-none prose-p:my-1.5 prose-pre:my-2 prose-pre:bg-black/40 prose-code:text-blue-300">
+              <div className="prose prose-invert prose-sm max-w-none prose-p:my-1.5 prose-pre:my-2 prose-pre:bg-black/30 prose-pre:rounded-xl prose-code:text-purple-300">
                 <ReactMarkdown>{msg.content}</ReactMarkdown>
               </div>
             )}

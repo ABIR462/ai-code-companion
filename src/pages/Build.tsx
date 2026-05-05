@@ -14,7 +14,6 @@ import {
   MessageSquare,
   Sparkles,
   Image as ImageIcon,
-  Settings,
   FileCode,
   FolderTree,
   X,
@@ -24,25 +23,26 @@ import {
 import { Link, useLocation } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { collection, addDoc, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/integrations/firebase/config";
 import { streamWebsiteAI } from "@/lib/websiteAI";
-import { getStoredSambaNovaKey, saveStoredSambaNovaKey } from "@/lib/sambanova";
 
 type ChatTurn = { role: "user" | "assistant"; content: string };
 type Device = "desktop" | "tablet" | "mobile";
 type ProjectFile = { path: string; content: string; language: string };
 
+
 const HTML_SYSTEM = `You are Matrixbook AI, an expert web developer powered by Mistral Codestral.
+
+const HTML_SYSTEM = `You are MATRIX-AI, an expert web developer powered by Mistral Codestral.
+
 
 OUTPUT FORMAT — VERY STRICT:
 Return ONLY one fenced code block, nothing else:
 
-\`\`\`html path=index.html
+
 <!DOCTYPE html>
 ...full single-file HTML...
 \`\`\`
@@ -52,11 +52,24 @@ RULES:
 - Embed any extra CSS in a <style> tag inside <head>
 - Modern UI: glassmorphism, gradients, smooth transitions, semantic HTML5
 - Mobile-first responsive
+
 - Use real-looking placeholder copy, hover states, micro-interactions
 - Use vanilla JavaScript for interactivity (no build step, no React, no Vue)
 - Use Unsplash, Picsum or pollinations URLs for images when relevant
 - Persist state via localStorage when relevant
 - Output the FULL HTML document — never truncate`;
+
+- Include realistic placeholder content, hover states, micro-interactions
+- Use vanilla JavaScript for interactivity (no build step)
+- Persist state via localStorage when relevant
+- For images use Unsplash: <img src="https://images.unsplash.com/photo-{id}?w=800&q=80" /> or picsum: <img src="https://picsum.photos/seed/{word}/800/600" />
+- Use Font Awesome CDN for icons: <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+- Use Google Fonts for typography: <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+- Generate complete, production-quality pages with hero sections, cards, footers
+- Always include beautiful images — never leave image placeholders empty
+- Be concise in code — avoid unnecessary comments`;
+
+
 
 function langFromPath(p: string) {
   const ext = p.split(".").pop()?.toLowerCase() ?? "";
@@ -130,9 +143,7 @@ export default function Build() {
   const [history, setHistory] = useState<ChatTurn[]>([]);
   const [docId, setDocId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [queuedCount, setQueuedCount] = useState(0);
-  const [sambaKeyDraft, setSambaKeyDraft] = useState(() => getStoredSambaNovaKey());
   const [streamBuffer, setStreamBuffer] = useState("");
 
   const didAutoRun = useRef(false);
@@ -213,6 +224,9 @@ export default function Build() {
       ? `Apply this change and return ALL files (full content, not diffs):\n\n${prompt}${filesContext}`
       : `Build this as a complete, polished, fully interactive single-file HTML website.\n\n${prompt}`;
 
+      : `Build this as a complete, polished, fully interactive single HTML page.\n\n${prompt}`;
+
+
     const messages = [
       { role: "system", content: HTML_SYSTEM },
       { role: "user", content: userMsg },
@@ -237,7 +251,7 @@ export default function Build() {
           historyRef.current = updated;
           setHistory(updated);
         },
-        { prefer: "mistral", timeoutMs: 180_000, signal: controller.signal },
+        { timeoutMs: 180_000, signal: controller.signal },
       );
 
       let parsed = parseFiles(result.content);
@@ -365,6 +379,7 @@ export default function Build() {
           <span className="ml-2 text-[10px] font-mono px-2 py-1 rounded bg-blue-600/20 border border-blue-500/30 text-blue-200">
             HTML
           </span>
+          <span className="ml-2 text-[10px] font-mono px-2 py-1 rounded bg-blue-600/20 text-blue-300 border border-blue-500/20">HTML</span>
         </div>
 
         <div className="flex items-center gap-1">
@@ -375,9 +390,6 @@ export default function Build() {
           >
             <ImageIcon className="w-4 h-4" />
           </Link>
-          <Button size="icon" variant="ghost" onClick={() => setSettingsOpen(true)} title="AI settings" className="text-white/70 hover:text-white">
-            <Settings className="w-4 h-4" />
-          </Button>
           {history.length > 0 && (
             <Button size="icon" variant="ghost" onClick={() => setShowHistory((v) => !v)} title="Chat history" className="text-white/70 hover:text-white relative">
               <MessageSquare className="w-4 h-4" />
@@ -515,6 +527,7 @@ export default function Build() {
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); run(draft); } }}
           placeholder={files.length ? "What should we change next?" : "Describe the website to build…"}
+            placeholder={files.length ? "What should we change next?" : "Describe the website to build…"}
             className="flex-1 bg-transparent outline-none text-sm placeholder:text-white/30"
           />
           {queuedCount > 0 && (
@@ -559,21 +572,6 @@ export default function Build() {
           </aside>
         </div>
       )}
-
-      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="glass-strong max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Settings className="w-4 h-4 text-primary" /> AI settings</DialogTitle>
-            <DialogDescription>Optional SambaNova fallback key (Mistral is primary).</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Input value={sambaKeyDraft} onChange={(e) => setSambaKeyDraft(e.target.value)} placeholder="SambaNova API key (optional)" className="bg-white/5 border-white/10 text-white" />
-            <Button className="w-full bg-blue-600 hover:bg-blue-500 text-white" onClick={() => { saveStoredSambaNovaKey(sambaKeyDraft); setSettingsOpen(false); toast.success("Saved"); }}>
-              Save AI key
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {isMobile && previewHtml && (
         <button onClick={() => { const w = window.open("", "_blank"); if (w) { w.document.write(previewHtml); w.document.close(); } }} className="fixed bottom-24 right-4 bg-blue-600 hover:bg-blue-500 p-4 rounded-full shadow-xl transition-colors" aria-label="Open preview">
