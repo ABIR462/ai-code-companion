@@ -33,20 +33,32 @@ type ChatTurn = { role: "user" | "assistant"; content: string };
 type Device = "desktop" | "tablet" | "mobile";
 type ProjectFile = { path: string; content: string; language: string };
 
+
+const HTML_SYSTEM = `You are Matrixbook AI, an expert web developer powered by Mistral Codestral.
+
 const HTML_SYSTEM = `You are MATRIX-AI, an expert web developer powered by Mistral Codestral.
+
 
 OUTPUT FORMAT — VERY STRICT:
 Return ONLY one fenced code block, nothing else:
 
-\`\`\`html path=index.html
+
 <!DOCTYPE html>
 ...full single-file HTML...
 \`\`\`
 
 RULES:
-- Embed CSS in <style> tag and use Tailwind via CDN: <script src="https://cdn.tailwindcss.com"></script>
+- Single self-contained file. Use Tailwind via CDN: <script src="https://cdn.tailwindcss.com"></script>
+- Embed any extra CSS in a <style> tag inside <head>
 - Modern UI: glassmorphism, gradients, smooth transitions, semantic HTML5
 - Mobile-first responsive
+
+- Use real-looking placeholder copy, hover states, micro-interactions
+- Use vanilla JavaScript for interactivity (no build step, no React, no Vue)
+- Use Unsplash, Picsum or pollinations URLs for images when relevant
+- Persist state via localStorage when relevant
+- Output the FULL HTML document — never truncate`;
+
 - Include realistic placeholder content, hover states, micro-interactions
 - Use vanilla JavaScript for interactivity (no build step)
 - Persist state via localStorage when relevant
@@ -56,6 +68,7 @@ RULES:
 - Generate complete, production-quality pages with hero sections, cards, footers
 - Always include beautiful images — never leave image placeholders empty
 - Be concise in code — avoid unnecessary comments`;
+
 
 
 function langFromPath(p: string) {
@@ -209,7 +222,10 @@ export default function Build() {
 
     const userMsg = isFollowUp
       ? `Apply this change and return ALL files (full content, not diffs):\n\n${prompt}${filesContext}`
+      : `Build this as a complete, polished, fully interactive single-file HTML website.\n\n${prompt}`;
+
       : `Build this as a complete, polished, fully interactive single HTML page.\n\n${prompt}`;
+
 
     const messages = [
       { role: "system", content: HTML_SYSTEM },
@@ -360,6 +376,9 @@ export default function Build() {
         <div className="flex items-center gap-2">
           <Link to="/" aria-label="Back to home"><ArrowLeft className="w-5 h-5" /></Link>
           {!isMobile && <span className="font-semibold text-sm tracking-wide">Matrixbook IDE</span>}
+          <span className="ml-2 text-[10px] font-mono px-2 py-1 rounded bg-blue-600/20 border border-blue-500/30 text-blue-200">
+            HTML
+          </span>
           <span className="ml-2 text-[10px] font-mono px-2 py-1 rounded bg-blue-600/20 text-blue-300 border border-blue-500/20">HTML</span>
         </div>
 
@@ -507,6 +526,7 @@ export default function Build() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); run(draft); } }}
+          placeholder={files.length ? "What should we change next?" : "Describe the website to build…"}
             placeholder={files.length ? "What should we change next?" : "Describe the website to build…"}
             className="flex-1 bg-transparent outline-none text-sm placeholder:text-white/30"
           />

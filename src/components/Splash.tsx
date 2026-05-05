@@ -22,7 +22,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
           <div className="absolute inset-0 bg-gradient-primary blur-3xl opacity-60 animate-pulse-glow rounded-full" />
           <img
             src={logo}
-            alt="MATRIX-AI"
+            alt="Matrixbook"
             width={120}
             height={120}
             className="relative w-28 h-28 object-contain drop-shadow-[0_0_30px_hsl(215_100%_55%/0.6)] animate-float"
@@ -30,10 +30,10 @@ export function Splash({ onDone }: { onDone: () => void }) {
         </div>
         <div className="text-center">
           <h1 className="font-brand text-5xl md:text-6xl text-gradient-brand leading-none">
-            Matrix&nbsp;AI
+            Matrixbook
           </h1>
           <p className="font-mono text-[10px] md:text-xs text-muted-foreground mt-3 tracking-[0.3em] uppercase">
-            Vibe coding · reimagined
+            Create · Connect · Vibe
           </p>
         </div>
         <div className="mt-4 w-40 h-0.5 bg-muted overflow-hidden rounded-full">

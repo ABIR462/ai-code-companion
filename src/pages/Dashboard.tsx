@@ -22,7 +22,9 @@ import {
   Copy, Zap, LayoutDashboard, Search, X, Check,
   Smartphone, Monitor, Tablet, RefreshCw,
   Image as ImageIcon, ShoppingBag, Type, Palette, MousePointer2, Upload, Wand2,
+  MessagesSquare, Save,
 } from "lucide-react";
+import { ensureProfile, subscribeProfile, updateProfile as saveProfile, Profile } from "@/lib/profiles";
 import {
   Dialog,
   DialogContent,
@@ -161,7 +163,49 @@ export default function Dashboard() {
   const [localImages,     setLocalImages]    = useState<string[]>([]);
   const [imagePrompt,     setImagePrompt]    = useState("");
   const [imageBusy,       setImageBusy]      = useState(false);
+  const [profile,         setProfile]        = useState<Profile | null>(null);
+  const [bioDraft,        setBioDraft]       = useState("");
+  const [statusDraft,     setStatusDraft]    = useState("");
+  const [nameDraft,       setNameDraft]      = useState("");
+  const [savingProfile,   setSavingProfile]  = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  /* ── Profile sync ── */
+  useEffect(() => {
+    if (!user) return;
+    ensureProfile({
+      uid: user.uid,
+      displayName: user.displayName,
+      email: user.email,
+      photoURL: user.photoURL,
+    }).catch(() => {});
+    const unsub = subscribeProfile(user.uid, (p) => {
+      setProfile(p);
+      if (p) {
+        setBioDraft(p.bio ?? "");
+        setStatusDraft(p.status ?? "");
+        setNameDraft(p.displayName ?? "");
+      }
+    });
+    return unsub;
+  }, [user]);
+
+  const persistProfile = async () => {
+    if (!user) return;
+    setSavingProfile(true);
+    try {
+      await saveProfile(user.uid, {
+        displayName: nameDraft.trim() || "Matrixbook user",
+        bio: bioDraft.trim(),
+        status: statusDraft.trim() || "online",
+      });
+      toast.success("Profile updated");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Save failed");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   /* ── Realtime Firestore listener ── */
   useEffect(() => {
@@ -409,6 +453,46 @@ export default function Dashboard() {
           <Button variant="hero" onClick={() => navigate("/build")}>
             <Plus className="w-4 h-4" /> New build
           </Button>
+        </div>
+
+        {/* ── Profile + Rooms strip ── */}
+        <div className="grid md:grid-cols-3 gap-4 mb-8">
+          <div className="md:col-span-2 glass rounded-xl p-5 border border-border/50">
+            <div className="flex items-center gap-3 mb-3">
+              {(profile?.photoURL || user?.photoURL) ? (
+                <img src={profile?.photoURL || user!.photoURL!} alt="" className="w-12 h-12 rounded-full object-cover" />
+              ) : (
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-fuchsia-500 to-blue-500 grid place-items-center text-sm font-bold text-white">
+                  {(nameDraft || user?.email || "?").charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-muted-foreground font-mono">Your Matrixbook profile</p>
+                <p className="text-sm font-semibold truncate">{user?.email}</p>
+              </div>
+              <Button size="sm" onClick={persistProfile} disabled={savingProfile} className="shrink-0">
+                {savingProfile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Save
+              </Button>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-2">
+              <Input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} placeholder="Display name" className="bg-muted/30" />
+              <Input value={statusDraft} onChange={(e) => setStatusDraft(e.target.value)} placeholder="Status (e.g. shipping a SaaS)" className="bg-muted/30" />
+            </div>
+            <Textarea value={bioDraft} onChange={(e) => setBioDraft(e.target.value)} placeholder="Tell the Matrixbook crew about yourself…" className="bg-muted/30 mt-2 min-h-16" />
+          </div>
+          <button
+            onClick={() => navigate("/rooms")}
+            className="glass rounded-xl p-5 border border-border/50 text-left hover:border-primary/50 transition group"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <MessagesSquare className="w-5 h-5 text-primary" />
+              <p className="font-semibold">Community Rooms</p>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Realtime chat with other Matrixbook creators. lobby · builds · supernova · help — powered by Ably.
+            </p>
+            <p className="text-xs text-primary font-mono mt-3 group-hover:underline">Enter rooms →</p>
+          </button>
         </div>
 
         {/* ── Search ── */}

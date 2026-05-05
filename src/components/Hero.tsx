@@ -48,7 +48,7 @@ export function Hero({
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass border border-primary/30 text-xs text-primary font-mono mb-8 animate-fade-up">
           <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-          Powered by Matrix AI
+          Powered by Matrixbook AI
           <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" style={{ animationDelay: "0.5s" }} />
         </div>
 
@@ -62,8 +62,9 @@ export function Hero({
         </h1>
 
         <p className="text-base sm:text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 animate-fade-up leading-relaxed">
-          Describe any web page in plain English. Matrix AI generates beautiful,
-          production-ready HTML with real-time visual editing — no code required.
+          Describe any web page in plain English. Matrixbook generates beautiful,
+          production-ready HTML, crafts images in Supernova, and connects you with
+          a realtime creator community — no code required.
         </p>
 
         {/* Prompt composer */}

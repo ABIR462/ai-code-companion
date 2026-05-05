@@ -86,8 +86,8 @@ export function Features() {
             <span className="text-gradient">to ship faster.</span>
           </h2>
           <p className="text-muted-foreground text-lg leading-relaxed">
-            Matrix AI combines the best AI model for code with a real-time visual editor,
-            Firebase sync, and commerce-ready templates.
+            Matrixbook combines the best AI model for code with a real-time visual editor,
+            realtime community rooms, and commerce-ready templates.
           </p>
         </div>
 

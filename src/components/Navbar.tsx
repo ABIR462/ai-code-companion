@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { LogOut, Sparkles, User as UserIcon, LayoutDashboard } from "lucide-react";
+import { LogOut, Sparkles, User as UserIcon, LayoutDashboard, MessagesSquare, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -33,7 +33,11 @@ export function Navbar() {
           <a href="/#templates" className="hover:text-foreground transition-colors">Templates</a>
           <a href="/#how" className="hover:text-foreground transition-colors">How it works</a>
           {user && (
-            <Link to="/dashboard" className="hover:text-foreground transition-colors">Dashboard</Link>
+            <>
+              <Link to="/rooms" className="hover:text-foreground transition-colors">Rooms</Link>
+              <Link to="/supernova" className="hover:text-foreground transition-colors">Supernova</Link>
+              <Link to="/dashboard" className="hover:text-foreground transition-colors">Dashboard</Link>
+            </>
           )}
         </nav>
 
@@ -63,6 +67,16 @@ export function Navbar() {
               <DropdownMenuItem asChild>
                 <Link to="/dashboard">
                   <LayoutDashboard className="w-4 h-4 mr-2" /> Dashboard
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/rooms">
+                  <MessagesSquare className="w-4 h-4 mr-2" /> Rooms
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/supernova">
+                  <Wand2 className="w-4 h-4 mr-2" /> Supernova
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate("/#builder")}>
