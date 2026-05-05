@@ -28,48 +28,35 @@ import { useAuth } from "@/hooks/useAuth";
 import { collection, addDoc, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/integrations/firebase/config";
 import { streamWebsiteAI } from "@/lib/websiteAI";
+import { VibeLoader } from "@/components/VibeLoader";
+import * as Ably from 'ably';
+import { appEnv } from "@/lib/env";
 
 type ChatTurn = { role: "user" | "assistant"; content: string };
 type Device = "desktop" | "tablet" | "mobile";
 type ProjectFile = { path: string; content: string; language: string };
 
+const HTML_SYSTEM = `You are MATRIXBOOK CORE, the world's most advanced neural web architect.
 
-const HTML_SYSTEM = `You are Matrixbook AI, an expert web developer powered by Mistral Codestral.
+OUTPUT FORMAT — STRICT ADHERENCE REQUIRED:
+Return ONLY one fenced code block containing a single-file HTML solution. No preamble or post-text.
 
-const HTML_SYSTEM = `You are MATRIX-AI, an expert web developer powered by Mistral Codestral.
-
-
-OUTPUT FORMAT — VERY STRICT:
-Return ONLY one fenced code block, nothing else:
-
-
+\`\`\`html path=index.html
 <!DOCTYPE html>
+<html lang="en">
 ...full single-file HTML...
+</html>
 \`\`\`
 
-RULES:
-- Single self-contained file. Use Tailwind via CDN: <script src="https://cdn.tailwindcss.com"></script>
-- Embed any extra CSS in a <style> tag inside <head>
-- Modern UI: glassmorphism, gradients, smooth transitions, semantic HTML5
-- Mobile-first responsive
+CORE ARCHITECTURAL PRINCIPLES:
+- UTILITY: Use Tailwind CSS via CDN: <script src="https://cdn.tailwindcss.com"></script>
+- ASSETS: You MUST include high-quality, relevant thematic images. Use Unsplash (https://images.unsplash.com/photo-...) with highly descriptive prompts.
+- AESTHETICS: Modern premium UI/UX: glassmorphism, depth through layered shadows, smooth Bezier transitions, and sophisticated typography (Inter/Syne).
+- RESPONSIVENESS: Pixel-perfect fluid layouts across all breakpoints.
+- INTERACTIVITY: Use vanilla JavaScript for high-performance interactive states.
+- SEMANTICS: Valid HTML5 structure for optimal SEO and accessibility.
 
-- Use real-looking placeholder copy, hover states, micro-interactions
-- Use vanilla JavaScript for interactivity (no build step, no React, no Vue)
-- Use Unsplash, Picsum or pollinations URLs for images when relevant
-- Persist state via localStorage when relevant
-- Output the FULL HTML document — never truncate`;
-
-- Include realistic placeholder content, hover states, micro-interactions
-- Use vanilla JavaScript for interactivity (no build step)
-- Persist state via localStorage when relevant
-- For images use Unsplash: <img src="https://images.unsplash.com/photo-{id}?w=800&q=80" /> or picsum: <img src="https://picsum.photos/seed/{word}/800/600" />
-- Use Font Awesome CDN for icons: <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-- Use Google Fonts for typography: <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-- Generate complete, production-quality pages with hero sections, cards, footers
-- Always include beautiful images — never leave image placeholders empty
-- Be concise in code — avoid unnecessary comments`;
-
-
+Special Instruction: Lead with visual impact. Every design must feel "custom" and expensive.`;
 
 function langFromPath(p: string) {
   const ext = p.split(".").pop()?.toLowerCase() ?? "";
@@ -133,7 +120,7 @@ export default function Build() {
 
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [activePath, setActivePath] = useState<string>("");
-  const [draft, setDraft] = useState((location.state as any)?.prompt ?? "");
+  const [draft, setDraft] = useState((location.state as { prompt?: string })?.prompt ?? "");
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [device, setDevice] = useState<Device>("desktop");
@@ -145,6 +132,9 @@ export default function Build() {
   const [showHistory, setShowHistory] = useState(false);
   const [queuedCount, setQueuedCount] = useState(0);
   const [streamBuffer, setStreamBuffer] = useState("");
+  const [isSynthesizing, setIsSynthesizing] = useState(false);
+
+  const ablyRef = useRef<Ably.Realtime | null>(null);
 
   const didAutoRun = useRef(false);
   const filesRef = useRef(files);
@@ -165,12 +155,19 @@ export default function Build() {
   }, []);
 
   useEffect(() => {
-    const p = (location.state as any)?.prompt;
+    const p = (location.state as { prompt?: string })?.prompt;
     if (p && !didAutoRun.current) {
       didAutoRun.current = true;
       run(p);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (appEnv.ably.apiKey) {
+      ablyRef.current = new Ably.Realtime({ key: appEnv.ably.apiKey });
+    }
+    return () => ablyRef.current?.close();
   }, []);
 
   const previewHtml = useMemo(() => (files.length ? pickPreview(files) : ""), [files]);
@@ -212,6 +209,7 @@ export default function Build() {
     setHistory(baseHistory);
     setStreamBuffer("");
     setStreaming(true);
+    setIsSynthesizing(true);
 
     const filesContext = isFollowUp
       ? "\n\nCURRENT PROJECT FILES (update them and return ALL files again):\n" +
@@ -222,10 +220,7 @@ export default function Build() {
 
     const userMsg = isFollowUp
       ? `Apply this change and return ALL files (full content, not diffs):\n\n${prompt}${filesContext}`
-      : `Build this as a complete, polished, fully interactive single-file HTML website.\n\n${prompt}`;
-
       : `Build this as a complete, polished, fully interactive single HTML page.\n\n${prompt}`;
-
 
     const messages = [
       { role: "system", content: HTML_SYSTEM },
@@ -250,6 +245,7 @@ export default function Build() {
           const updated: ChatTurn[] = [...baseHistory, { role: "assistant", content: preview + "▍" }];
           historyRef.current = updated;
           setHistory(updated);
+          if (setIsSynthesizing) setIsSynthesizing(false); // Hide synthetic loader once stream starts
         },
         { timeoutMs: 180_000, signal: controller.signal },
       );
@@ -277,10 +273,11 @@ export default function Build() {
 
       await persistBuild(prompt, parsed);
       toast.success(isFollowUp ? "Updated" : "Build ready");
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const err = e as { name?: string; message?: string };
       console.error("processPrompt() error:", e);
-      const isAbort = e?.name === "AbortError" || /aborted/i.test(String(e?.message));
-      toast.error(isAbort ? "Generation stopped" : (e?.message ?? "Generation failed"));
+      const isAbort = err?.name === "AbortError" || /aborted/i.test(String(err?.message));
+      toast.error(isAbort ? "Generation stopped" : (err?.message ?? "Generation failed"));
       historyRef.current = baseHistory;
       setHistory(baseHistory);
       if (currentFiles.length === 0 && !isAbort) {
@@ -316,13 +313,18 @@ export default function Build() {
   const run = async (prompt: string) => {
     const next = prompt.trim();
     if (!next) return;
+    
+    // Clear draft to focus on the build process
     setDraft("");
+    
     if (loadingRef.current) {
       queueRef.current.push(next);
       setQueuedCount(queueRef.current.length);
-      toast.message("Queued — will run after current generation");
+      toast.message("Integration queued — will synthesize following current workflow");
       return;
     }
+
+    // Standard run logic
     await drainQueue(next);
   };
 
@@ -376,9 +378,6 @@ export default function Build() {
         <div className="flex items-center gap-2">
           <Link to="/" aria-label="Back to home"><ArrowLeft className="w-5 h-5" /></Link>
           {!isMobile && <span className="font-semibold text-sm tracking-wide">Matrixbook IDE</span>}
-          <span className="ml-2 text-[10px] font-mono px-2 py-1 rounded bg-blue-600/20 border border-blue-500/30 text-blue-200">
-            HTML
-          </span>
           <span className="ml-2 text-[10px] font-mono px-2 py-1 rounded bg-blue-600/20 text-blue-300 border border-blue-500/20">HTML</span>
         </div>
 
@@ -480,17 +479,32 @@ export default function Build() {
           </aside>
         )}
 
-        <div className="flex-1 flex items-center justify-center overflow-auto p-4">
+        <div className="flex-1 flex items-center justify-center overflow-auto p-4 bg-[#050505]">
           {tab === "preview" ? (
-            <div className={`bg-white overflow-hidden rounded-xl shadow-2xl shadow-black/50 ${getSize()}`} style={{ transform: `scale(${scale})`, transformOrigin: "top center" }}>
-              {previewHtml ? (
+            <div className={`bg-white overflow-hidden rounded-xl shadow-[0_0_100px_rgba(0,0,0,0.8)] ${getSize()}`} style={{ transform: `scale(${scale})`, transformOrigin: "top center" }}>
+              {previewHtml && !isSynthesizing ? (
                 <iframe srcDoc={previewHtml} className="w-full h-full border-0" sandbox="allow-scripts allow-same-origin" title="Preview" />
               ) : (
-                <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
-                  {loading ? (
-                    <><Loader2 className="w-8 h-8 animate-spin text-blue-500" /><p className="text-sm font-mono">Building…</p></>
+                <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3 bg-[#0a0a0a]">
+                  {isSynthesizing ? (
+                    <VibeLoader />
+                  ) : loading ? (
+                    <div className="flex flex-col items-center gap-4">
+                       <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
+                       <p className="text-xs font-mono font-bold tracking-widest text-neutral-500 uppercase">Synchronizing Logic...</p>
+                    </div>
                   ) : (
-                    <><div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center"><Monitor className="w-6 h-6 text-gray-400" /></div><p className="text-sm">Describe what to build below</p></>
+                    <div className="flex flex-col items-center gap-6 max-w-sm text-center">
+                       <div className="w-16 h-16 rounded-[2rem] bg-white/5 flex items-center justify-center border border-white/10">
+                         <Monitor className="w-6 h-6 text-neutral-500" />
+                       </div>
+                       <div className="space-y-2">
+                         <h3 className="text-sm font-bold text-neutral-300 uppercase tracking-widest">Awaiting Neural Prompt</h3>
+                         <p className="text-xs text-neutral-600 font-sans leading-relaxed">
+                           Describe your architectural vision below to start the synthesis process.
+                         </p>
+                       </div>
+                    </div>
                   )}
                 </div>
               )}
@@ -526,7 +540,6 @@ export default function Build() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); run(draft); } }}
-          placeholder={files.length ? "What should we change next?" : "Describe the website to build…"}
             placeholder={files.length ? "What should we change next?" : "Describe the website to build…"}
             className="flex-1 bg-transparent outline-none text-sm placeholder:text-white/30"
           />
