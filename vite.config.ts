@@ -10,13 +10,6 @@ export default defineConfig({
     hmr: {
       overlay: false,
     },
-    proxy: {
-      "/api/codestral": {
-        target: "https://codestral.mistral.ai",
-        changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/api\/codestral/, ""),
-      },
-    },
   },
   plugins: [react()],
   resolve: {

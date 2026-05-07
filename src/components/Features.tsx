@@ -7,7 +7,7 @@ const FEATURES = [
   {
     icon: Wand2,
     title: "AI Code Generation",
-    desc: "Codestral writes complete, production-quality HTML, CSS, and JavaScript from a single sentence.",
+    desc: "DeepSeek writes complete, production-quality HTML, CSS, and JavaScript from a single sentence.",
     color: "text-violet-400",
     bg: "bg-violet-500/10 border-violet-500/20",
   },
@@ -28,7 +28,7 @@ const FEATURES = [
   {
     icon: Image,
     title: "Real Image Integration",
-    desc: "AI-powered image generation via Gemini Imagen 4 — create stunning visuals directly from text prompts.",
+    desc: "AI-powered image generation via Gemini Flash Image — create stunning visuals directly from text prompts.",
     color: "text-orange-400",
     bg: "bg-orange-500/10 border-orange-500/20",
   },
@@ -63,7 +63,7 @@ const FEATURES = [
   {
     icon: Sparkles,
     title: "Supernova AI Studio",
-    desc: "Chat with Gemini AI and generate images with Imagen 4 — all in a beautiful, Gemini-inspired interface.",
+    desc: "Chat with Gemini Flash and generate images with Gemini 2.5 Flash Image in a polished studio interface.",
     color: "text-fuchsia-400",
     bg: "bg-fuchsia-500/10 border-fuchsia-500/20",
   },

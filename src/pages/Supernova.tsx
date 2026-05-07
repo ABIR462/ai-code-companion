@@ -221,7 +221,7 @@ export default function Supernova() {
           count: 1,
           signal: controller.signal,
         });
-        // Friendly caption via Mistral (best-effort, non-blocking)
+        // Friendly caption via Gemini Flash (best-effort, non-blocking)
         let caption = "";
         try {
           caption = await chatOnce(

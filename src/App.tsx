@@ -12,7 +12,6 @@ import AuthPage from "./pages/Auth.tsx";
 import Build from "./pages/Build.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
 import Supernova from "./pages/Supernova.tsx";
-import Rooms from "./pages/Rooms.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -59,14 +58,6 @@ const App = () => {
                 element={
                   <ProtectedRoute>
                     <Supernova />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/rooms"
-                element={
-                  <ProtectedRoute>
-                    <Rooms />
                   </ProtectedRoute>
                 }
               />

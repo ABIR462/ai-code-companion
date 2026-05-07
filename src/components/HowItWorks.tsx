@@ -14,7 +14,7 @@ const STEPS = [
     icon: Wand2,
     number: "02",
     title: "AI builds it",
-    body: "Codestral generates a complete, styled, responsive HTML page with real images and clean code.",
+    body: "DeepSeek generates a complete, styled, responsive HTML page with real images and clean code.",
     color: "from-violet-500/20 to-purple-500/20",
     border: "border-violet-500/30",
     iconColor: "text-violet-400",
