@@ -1,4 +1,4 @@
-import { openrouter, VIBE_MODEL } from "./openrouter";
+import { streamWebsiteAI } from "@/lib/websiteAI";
 
 export type VibePhase = "thinking" | "streaming" | "done" | "error";
 
@@ -24,23 +24,14 @@ export async function generateSite(opts: {
   ];
 
   try {
-    const stream = await openrouter.chat.completions.create({
-      model: VIBE_MODEL,
+    await streamWebsiteAI(
       messages,
-      stream: true,
-    });
-
-    let started = false;
-    for await (const part of stream) {
-      const delta = part.choices?.[0]?.delta?.content ?? "";
-      if (delta) {
-        if (!started) {
-          started = true;
-          onPhase("streaming");
-        }
-        onToken(delta);
-      }
-    }
+      (chunk) => {
+        onPhase("streaming");
+        onToken(chunk);
+      },
+      { timeoutMs: 180_000 },
+    );
     onPhase("done");
   } catch (e) {
     onPhase("error");
