@@ -384,7 +384,7 @@ export default function Dashboard() {
     }
   };
 
-  /* ── Regenerate with Codestral ── */
+  /* ── Regenerate with DeepSeek ── */
   const regen = async () => {
     if (!active) return;
     setRegenLoading(true);
