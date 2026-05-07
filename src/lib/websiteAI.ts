@@ -1,7 +1,7 @@
-import { MISTRAL_CHAT_URL, MISTRAL_MODEL, explainMistralError, getMistralHeaders, hasMistralConfig } from "@/lib/mistral";
+import { getOpenRouterHeaders, OPENROUTER_CHAT_URL, VIBE_MODEL, explainOpenRouterError } from "@/lib/openrouter";
 
-export type AIMessage = { role: string; content: string };
-export type AIProvider = "Mistral";
+export type AIMessage = { role: "system" | "user" | "assistant" | string; content: string };
+export type AIProvider = "DeepSeek";
 
 async function withTimeout<T>(
   task: (signal: AbortSignal) => Promise<T>,
@@ -13,155 +13,162 @@ async function withTimeout<T>(
   const onExternal = () => controller.abort();
   if (externalSignal) {
     if (externalSignal.aborted) controller.abort();
-    else externalSignal.addEventListener("abort", onExternal);
+    else externalSignal.addEventListener("abort", onExternal, { once: true });
   }
   try {
     return await task(controller.signal);
   } finally {
     window.clearTimeout(timer);
-    if (externalSignal) externalSignal.removeEventListener("abort", onExternal);
+    externalSignal?.removeEventListener("abort", onExternal);
   }
 }
 
-async function callMistral(messages: AIMessage[], signal?: AbortSignal, attempt = 1): Promise<string> {
-  const response = await fetch(MISTRAL_CHAT_URL, {
+function parseOpenRouterContent(data: any): string {
+  const message = data?.choices?.[0]?.message;
+  const direct = message?.content;
+  if (typeof direct === "string") return direct.trim();
+  if (Array.isArray(direct)) {
+    return direct
+      .map((part) => (typeof part?.text === "string" ? part.text : typeof part === "string" ? part : ""))
+      .join("")
+      .trim();
+  }
+  return "";
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+async function callOpenRouter(messages: AIMessage[], signal?: AbortSignal): Promise<string> {
+  const response = await fetch(OPENROUTER_CHAT_URL, {
     method: "POST",
-    headers: getMistralHeaders(),
+    headers: getOpenRouterHeaders(),
     signal,
     body: JSON.stringify({
-      model: MISTRAL_MODEL,
+      model: VIBE_MODEL,
       messages,
-      temperature: 0.1,
+      temperature: 0.15,
       max_tokens: 8192,
     }),
   });
 
-  if ((response.status === 502 || response.status === 503 || response.status === 504) && attempt < 2) {
-    await new Promise((resolve) => window.setTimeout(resolve, 1200));
-    return callMistral(messages, signal, attempt + 1);
-  }
-
+  const text = await response.text();
   if (!response.ok) {
-    let details = "";
-    try {
-      details = await response.text();
-    } catch {
-      details = "";
-    }
-    throw new Error(`${explainMistralError(response.status)}${details ? `: ${details.slice(0, 220)}` : ""}`);
+    throw new Error(`${explainOpenRouterError(response.status, text)}${text ? `: ${text.slice(0, 220)}` : ""}`);
   }
 
-  const data = await response.json();
-  return String(data?.choices?.[0]?.message?.content ?? "").trim();
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return text.trim();
+  }
+  const content = parseOpenRouterContent(data);
+  if (!content) {
+    const providerError = data?.error?.message || data?.choices?.[0]?.finish_reason;
+    throw new Error(providerError ? `DeepSeek returned no HTML: ${providerError}` : "DeepSeek returned an empty response");
+  }
+  return content;
 }
 
-/**
- * Stream a chat completion. Calls onDelta for every text token chunk as it arrives.
- * Returns the full concatenated text and which provider answered.
- */
+async function streamOpenRouter(
+  messages: AIMessage[],
+  onDelta: (chunk: string, full: string) => void,
+  signal: AbortSignal,
+): Promise<string> {
+  const response = await fetch(OPENROUTER_CHAT_URL, {
+    method: "POST",
+    headers: getOpenRouterHeaders(),
+    signal,
+    body: JSON.stringify({
+      model: VIBE_MODEL,
+      messages,
+      temperature: 0.15,
+      max_tokens: 8192,
+      stream: true,
+    }),
+  });
+
+  if (!response.ok || !response.body) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`${explainOpenRouterError(response.status, detail)}${detail ? `: ${detail.slice(0, 220)}` : ""}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let full = "";
+  let providerError = "";
+
+  const processLine = (rawLine: string) => {
+    let line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    if (!line.trim() || line.startsWith(":")) return;
+    if (!line.startsWith("data:")) return;
+
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") return;
+
+    try {
+      const json = JSON.parse(payload);
+      if (json?.error?.message) {
+        providerError = json.error.message;
+        return;
+      }
+      const delta = json?.choices?.[0]?.delta?.content;
+      if (typeof delta === "string" && delta) {
+        full += delta;
+        onDelta(delta, full);
+      }
+    } catch {
+      buffer = `${line}\n${buffer}`;
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 1);
+      processLine(line);
+    }
+  }
+
+  decoder.decode();
+  if (buffer.trim()) buffer.split("\n").forEach(processLine);
+
+  if (full.trim()) return full.trim();
+  if (providerError) throw new Error(`DeepSeek stream failed: ${providerError}`);
+  throw new Error("DeepSeek returned an empty stream");
+}
+
 export async function streamWebsiteAI(
   messages: AIMessage[],
   onDelta: (chunk: string, full: string) => void,
   options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<{ content: string; provider: AIProvider }> {
-  const errors: string[] = [];
-
-  const tryStream = async (
-    url: string,
-    headers: Record<string, string>,
-    model: string,
-    signal: AbortSignal,
-  ) => {
-    const resp = await fetch(url, {
-      method: "POST",
-      headers,
-      signal,
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.1,
-        max_tokens: 8192,
-        stream: true,
-      }),
-    });
-    if (!resp.ok || !resp.body) {
-      let detail = "";
-      try { detail = await resp.text(); } catch {}
-      throw new Error(`${explainMistralError(resp.status)}${detail ? `: ${detail.slice(0, 200)}` : ""}`);
-    }
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let full = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let idx: number;
-      while ((idx = buffer.indexOf("\n")) !== -1) {
-        let line = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 1);
-        if (line.endsWith("\r")) line = line.slice(0, -1);
-        if (!line.startsWith("data:")) continue;
-        const payload = line.slice(5).trim();
-        if (!payload || payload === "[DONE]") continue;
-        try {
-          const json = JSON.parse(payload);
-          const delta = json?.choices?.[0]?.delta?.content;
-          if (typeof delta === "string" && delta) {
-            full += delta;
-            onDelta(delta, full);
-          }
-        } catch {
-          buffer = line + "\n" + buffer;
-          break;
-        }
-      }
-    }
-    return full;
-  };
-
   return withTimeout(async (signal) => {
-    if (hasMistralConfig) {
-      try {
-        const content = await tryStream(
-          MISTRAL_CHAT_URL,
-          getMistralHeaders() as any,
-          MISTRAL_MODEL,
-          signal,
-        );
-        if (content) return { content, provider: "Mistral" as const };
-        errors.push("Mistral returned empty stream");
-      } catch (e) {
-        errors.push(e instanceof Error ? e.message : "Mistral stream failed");
-      }
+    try {
+      const content = await streamOpenRouter(messages, onDelta, signal);
+      return { content, provider: "DeepSeek" as const };
+    } catch (error) {
+      if (isAbortError(error) || signal.aborted) throw error;
+      const content = await callOpenRouter(messages, signal);
+      onDelta(content, content);
+      return { content, provider: "DeepSeek" as const };
     }
-    throw new Error(errors.length ? errors.join(" | ") : "Mistral AI is not configured — check your API key");
-  }, options.timeoutMs ?? 120_000, options.signal);
+  }, options.timeoutMs ?? 180_000, options.signal);
 }
 
 export async function completeWebsiteAI(
   messages: AIMessage[],
   options: { timeoutMs?: number } = {},
 ): Promise<{ content: string; provider: AIProvider }> {
-  const errors: string[] = [];
-
   return withTimeout(async (signal) => {
-    if (hasMistralConfig) {
-      try {
-        const content = await callMistral(messages, signal);
-        if (content) return { content, provider: "Mistral" as const };
-        errors.push("Mistral returned empty content");
-      } catch (error) {
-        errors.push(error instanceof Error ? error.message : "Mistral failed");
-      }
-    }
-
-    throw new Error(
-      errors.length
-        ? errors.join(" | ")
-        : "Mistral AI is not configured. Check your API key.",
-    );
-  }, options.timeoutMs ?? 90_000);
+    const content = await callOpenRouter(messages, signal);
+    return { content, provider: "DeepSeek" as const };
+  }, options.timeoutMs ?? 120_000);
 }
-
