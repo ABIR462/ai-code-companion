@@ -6,16 +6,11 @@ type RuntimeEnvKey =
   | "VITE_FIREBASE_MESSAGING_SENDER_ID"
   | "VITE_FIREBASE_APP_ID"
   | "VITE_FIREBASE_MEASUREMENT_ID"
-  | "VITE_MISTRAL_API_KEY"
-  | "VITE_MISTRAL_CHAT_ENDPOINT"
-  | "VITE_MISTRAL_MODEL"
-
-  | "VITE_SAMBANOVA_API_KEY"
-  | "VITE_SAMBANOVA_CHAT_ENDPOINT"
-  | "VITE_SAMBANOVA_MODEL"
-  | "VITE_ABLY_API_KEY";
-  | "VITE_GEMINI_API_KEY";
-
+  | "VITE_GEMINI_API_KEY"
+  | "VITE_GEMINI_CHAT_MODEL"
+  | "VITE_GEMINI_IMAGE_MODEL"
+  | "VITE_OPENROUTER_API_KEY"
+  | "VITE_OPENROUTER_MODEL";
 
 const readEnv = (key: RuntimeEnvKey, fallback = "") => {
   const value = import.meta.env[key];
@@ -32,19 +27,14 @@ export const appEnv = {
     appId: readEnv("VITE_FIREBASE_APP_ID"),
     measurementId: readEnv("VITE_FIREBASE_MEASUREMENT_ID"),
   },
-  mistral: {
-    apiKey: readEnv("VITE_MISTRAL_API_KEY"),
-    chatEndpoint: readEnv(
-      "VITE_MISTRAL_CHAT_ENDPOINT",
-      "https://api.mistral.ai/v1/chat/completions",
-    ),
-    model: readEnv("VITE_MISTRAL_MODEL", "codestral-latest"),
-  },
   gemini: {
     apiKey: readEnv("VITE_GEMINI_API_KEY"),
+    chatModel: readEnv("VITE_GEMINI_CHAT_MODEL", "gemini-2.0-flash"),
+    imageModel: readEnv("VITE_GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image"),
   },
-  ably: {
-    apiKey: readEnv("VITE_ABLY_API_KEY"),
+  openrouter: {
+    apiKey: readEnv("VITE_OPENROUTER_API_KEY"),
+    model: readEnv("VITE_OPENROUTER_MODEL", "deepseek/deepseek-v3.2"),
   },
 } as const;
 
@@ -57,17 +47,11 @@ export const firebaseMissingEnvKeys = [
   ["VITE_FIREBASE_APP_ID", appEnv.firebase.appId],
 ].flatMap(([key, value]) => (value ? [] : [key]));
 
-export const mistralMissingEnvKeys = [
-  ["VITE_MISTRAL_API_KEY", appEnv.mistral.apiKey],
-  ["VITE_MISTRAL_CHAT_ENDPOINT", appEnv.mistral.chatEndpoint],
-  ["VITE_MISTRAL_MODEL", appEnv.mistral.model],
+export const openRouterMissingEnvKeys = [
+  ["VITE_OPENROUTER_API_KEY", appEnv.openrouter.apiKey],
+  ["VITE_OPENROUTER_MODEL", appEnv.openrouter.model],
 ].flatMap(([key, value]) => (value ? [] : [key]));
 
 export const isFirebaseConfigured = firebaseMissingEnvKeys.length === 0;
-
-export const isSambaNovaConfigured = sambanovaMissingEnvKeys.length === 0;
-export const isAblyConfigured = !!appEnv.ably.apiKey;
-
-
 export const isGeminiConfigured = !!appEnv.gemini.apiKey;
-
+export const isOpenRouterConfigured = openRouterMissingEnvKeys.length === 0;
