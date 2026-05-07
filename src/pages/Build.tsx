@@ -29,17 +29,6 @@ import { collection, addDoc, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/integrations/firebase/config";
 import { streamWebsiteAI } from "@/lib/websiteAI";
 import { VibeLoader } from "@/components/VibeLoader";
-import { appEnv } from "@/lib/env";
-
-// FIX 1: Lazy-import Ably only when the key exists to avoid build crash
-// if the ably package is missing or the key is undefined at build time.
-let AblyRealtime: typeof import("ably").Realtime | null = null;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  AblyRealtime = require("ably").Realtime;
-} catch {
-  // ably not installed — Ably features will be disabled
-}
 
 type ChatTurn = { role: "user" | "assistant"; content: string };
 type Device = "desktop" | "tablet" | "mobile";
@@ -155,9 +144,6 @@ export default function Build() {
   const [streamBuffer, setStreamBuffer] = useState("");
   const [isSynthesizing, setIsSynthesizing] = useState(false);
 
-  // FIX 3: Typed as unknown since Ably may not be available
-  const ablyRef = useRef<unknown>(null);
-
   const didAutoRun = useRef(false);
   const filesRef = useRef<ProjectFile[]>(files);
   const historyRef = useRef<ChatTurn[]>(history);
@@ -180,21 +166,6 @@ export default function Build() {
     const resize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
-  }, []);
-
-  // FIX 4: Ably init guarded — won't crash if package missing or key undefined
-  useEffect(() => {
-    if (AblyRealtime && appEnv?.ably?.apiKey) {
-      ablyRef.current = new AblyRealtime({ key: appEnv.ably.apiKey });
-    }
-    return () => {
-      if (
-        ablyRef.current &&
-        typeof (ablyRef.current as { close?: () => void }).close === "function"
-      ) {
-        (ablyRef.current as { close: () => void }).close();
-      }
-    };
   }, []);
 
   const previewHtml = useMemo(
@@ -262,9 +233,6 @@ export default function Build() {
         ? `Apply this change and return ALL files (full content, not diffs):\n\n${prompt}${filesContext}`
         : `Build this as a complete, polished, fully interactive single HTML page.\n\n${prompt}`;
 
-      // FIX 6: messages typed correctly — system role handled as first user message
-      // since streamWebsiteAI may not accept a system role object depending on its signature.
-      // If your streamWebsiteAI accepts { role: "system" | "user" | "assistant" } keep as-is.
       const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
         { role: "system", content: HTML_SYSTEM },
         { role: "user", content: userMsg },
@@ -350,6 +318,7 @@ export default function Build() {
       } finally {
         abortRef.current = null;
         setStreaming(false);
+        setIsSynthesizing(false);
         setStreamBuffer("");
       }
     },
@@ -362,11 +331,6 @@ export default function Build() {
       setLoading(true);
       try {
         await processPrompt(first);
-        while (queueRef.current.length > 0) {
-          const next = queueRef.current.shift()!;
-          setQueuedCount(queueRef.current.length);
-          await processPrompt(next);
-        }
       } finally {
         loadingRef.current = false;
         setLoading(false);
@@ -383,10 +347,8 @@ export default function Build() {
       if (!next) return;
       setDraft("");
       if (loadingRef.current) {
-        queueRef.current.push(next);
-        setQueuedCount(queueRef.current.length);
         toast.message(
-          "Integration queued — will synthesize following current workflow"
+          "A website is already generating — wait or press Stop before sending another prompt"
         );
         return;
       }

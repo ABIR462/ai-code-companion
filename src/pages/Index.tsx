@@ -42,8 +42,8 @@ const Index = () => {
             <div className="md:col-span-2">
               <Brand size={36} />
               <p className="text-sm text-muted-foreground mt-4 max-w-xs leading-relaxed">
-                The AI-powered social platform where you build websites, craft images,
-                and chat with the community in realtime.
+                The AI-powered platform where you build websites, craft images,
+                and save every creation with Firebase sync.
               </p>
               <div className="flex items-center gap-3 mt-5">
                 <a
