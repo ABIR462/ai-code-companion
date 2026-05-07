@@ -134,15 +134,15 @@ export default function AuthPage() {
             </span>
           </h2>
           <p className="text-muted-foreground text-lg leading-relaxed">
-            Free access to AI websites, AI images, and a realtime
-            creator community — all in one place.
+            Free access to Firebase-synced AI websites and Supernova image
+            generation — all in one place.
           </p>
 
           <div className="mt-10 space-y-4">
             {[
               "AI-generated landing pages and components",
               "Supernova: prompt → hyper-real or stylized images",
-              "Realtime rooms with presence powered by Ably",
+              "Firebase-synced workspace for every saved creation",
             ].map((line) => (
               <div
                 key={line}

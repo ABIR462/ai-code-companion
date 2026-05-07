@@ -22,7 +22,7 @@ import {
   Copy, Zap, LayoutDashboard, Search, X, Check,
   Smartphone, Monitor, Tablet, RefreshCw,
   Image as ImageIcon, ShoppingBag, Type, Palette, MousePointer2, Upload, Wand2,
-  MessagesSquare, Save,
+  Save,
 } from "lucide-react";
 import { ensureProfile, subscribeProfile, updateProfile as saveProfile, Profile } from "@/lib/profiles";
 import {
@@ -455,7 +455,7 @@ export default function Dashboard() {
           </Button>
         </div>
 
-        {/* ── Profile + Rooms strip ── */}
+        {/* ── Profile + Supernova strip ── */}
         <div className="grid md:grid-cols-3 gap-4 mb-8">
           <div className="md:col-span-2 glass rounded-xl p-5 border border-border/50">
             <div className="flex items-center gap-3 mb-3">
@@ -481,15 +481,15 @@ export default function Dashboard() {
             <Textarea value={bioDraft} onChange={(e) => setBioDraft(e.target.value)} placeholder="Tell the Matrixbook crew about yourself…" className="bg-muted/30 mt-2 min-h-16" />
           </div>
           <button
-            onClick={() => navigate("/rooms")}
+            onClick={() => navigate("/supernova")}
             className="glass rounded-xl p-5 border border-border/50 text-left hover:border-primary/50 transition group"
           >
             <div className="flex items-center gap-2 mb-2">
-              <MessagesSquare className="w-5 h-5 text-primary" />
-              <p className="font-semibold">Community Rooms</p>
+              <ImageIcon className="w-5 h-5 text-primary" />
+              <p className="font-semibold">Supernova Studio</p>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Realtime chat with other Matrixbook creators. lobby · builds · supernova · help — powered by Ably.
+              Generate prompt-based images with Gemini Flash and reuse them in your websites.
             </p>
             <p className="text-xs text-primary font-mono mt-3 group-hover:underline">Enter rooms →</p>
           </button>
