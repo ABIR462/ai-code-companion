@@ -42,6 +42,7 @@ import {
   SupernovaConversation,
   SupernovaMessage,
 } from "@/lib/supernovaStore";
+import { isSupernovaChatConfigured } from "@/lib/env";
 import {
   ChatMessage,
   ChatPart,
@@ -180,26 +181,36 @@ export default function Supernova() {
   const send = async () => {
     if (!user) return;
     const text = draft.trim();
-    if (!text && attachments.length === 0) return;
     if (busy) return;
+    if (!text && attachments.length === 0) return;
+
+    const attachEditDefault =
+      "Use the attached image(s) as reference. Generate a polished result matching the selected style and aspect ratio.";
+    const intent = imageMode
+      ? { isImage: true, prompt: text || (attachments.length ? attachEditDefault : "") }
+      : detectImageIntent(text);
+
+    if (!intent.isImage && !isSupernovaChatConfigured) {
+      toast.error("Configure VITE_OPENROUTER_API_KEY or VITE_NVIDIA_API_KEY for Supernova chat.");
+      return;
+    }
 
     // ensure conversation exists
     let cid = activeId;
     if (!cid) {
-      cid = await createConversation(user.uid, autoTitle(text));
+      cid = await createConversation(user.uid, autoTitle(text || "Image"));
       setActiveId(cid);
     } else if (messages.length === 0 && text) {
       renameConversation(user.uid, cid, autoTitle(text)).catch(() => {});
     }
 
     const userImages = attachments.slice();
-    const intent = imageMode ? { isImage: true, prompt: text } : detectImageIntent(text);
 
     // Persist user message
     await appendMessage(user.uid, cid, {
       role: "user",
       kind: intent.isImage ? "image" : "text",
-      content: text,
+      content: text || (intent.isImage ? "(image request)" : "(attachment)"),
       images: userImages,
       prompt: intent.isImage ? intent.prompt : undefined,
     });
@@ -220,18 +231,29 @@ export default function Supernova() {
           ratio,
           count: 1,
           signal: controller.signal,
+          referenceDataUrls: userImages.length ? userImages : undefined,
         });
-        // Friendly caption via Gemini Flash (best-effort, non-blocking)
         let caption = "";
-        try {
-          caption = await chatOnce(
-            [
-              { role: "system", content: "You are Supernova, a concise image studio assistant. Reply in 1-2 sentences describing what was generated." },
-              { role: "user", content: `Image prompt: "${intent.prompt}". Style: ${style}. Ratio: ${ratio}.` },
-            ],
-            { signal: controller.signal, maxTokens: 120 },
-          );
-        } catch { /* ignore */ }
+        if (isSupernovaChatConfigured) {
+          try {
+            caption = await chatOnce(
+              [
+                {
+                  role: "system",
+                  content:
+                    "You are Supernova, a concise image studio assistant. Reply in 1-2 sentences describing what was generated.",
+                },
+                {
+                  role: "user",
+                  content: `Image prompt: "${intent.prompt}". Style: ${style}. Ratio: ${ratio}.`,
+                },
+              ],
+              { signal: controller.signal, maxTokens: 120 },
+            );
+          } catch {
+            /* ignore */
+          }
+        }
 
         await appendMessage(user.uid, cid, {
           role: "assistant",
@@ -264,7 +286,13 @@ export default function Supernova() {
         const parts: ChatPart[] = [];
         if (text) parts.push({ type: "text", text });
         userImages.forEach((url) => parts.push({ type: "image_url", image_url: { url } }));
-        history.push({ role: "user", content: parts.length > 1 || userImages.length ? parts : text });
+        if (!text && userImages.length) {
+          parts.unshift({ type: "text", text: "Reply helpfully about the attached image(s)." });
+        }
+        history.push({
+          role: "user",
+          content: parts.length > 1 || userImages.length ? parts : text || "Hello",
+        });
 
         setStreamText("▍");
         const final = await streamChat(
@@ -348,6 +376,13 @@ export default function Supernova() {
   /* ── Build chat panel (reused in both desktop & mobile drawer) ── */
   const chatPanel = (
     <div className="flex flex-col h-full bg-[#131314]">
+      {!isSupernovaChatConfigured && (
+        <div className="shrink-0 mx-3 mt-3 px-3 py-2 rounded-xl border border-amber-500/35 bg-amber-500/10 text-[11px] text-amber-100/95 leading-snug">
+          Set <span className="font-mono text-amber-200">VITE_OPENROUTER_API_KEY</span> (recommended) or{" "}
+          <span className="font-mono text-amber-200">VITE_NVIDIA_API_KEY</span> for chat. Images use OpenRouter when
+          configured.
+        </div>
+      )}
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-auto">
         <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
@@ -445,7 +480,9 @@ export default function Supernova() {
               <Button onClick={send} disabled={!draft.trim() && attachments.length === 0} size="icon" className="bg-gradient-to-br from-blue-500 to-purple-600 hover:opacity-90 text-white rounded-full shrink-0 w-8 h-8 disabled:opacity-30"><Send className="w-4 h-4" /></Button>
             )}
           </div>
-          <p className="text-[10px] text-zinc-600 text-center">Powered by Gemini AI · Images via Imagen 4</p>
+          <p className="text-[10px] text-zinc-600 text-center">
+            Supernova · OpenRouter chat + image (e.g. gpt-5.4-image-2) · or NVIDIA / fallback
+          </p>
         </div>
       </div>
     </div>

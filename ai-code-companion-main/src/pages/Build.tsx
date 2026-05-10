@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { collection, addDoc, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/integrations/firebase/config";
+import JSZip from "jszip";
 import { streamWebsiteAI } from "@/lib/websiteAI";
 import { VibeLoader } from "@/components/VibeLoader";
 
@@ -172,6 +173,10 @@ export default function Build() {
     () => (files.length ? pickPreview(files) : ""),
     [files]
   );
+  const previewKey = useMemo(
+    () => files.map((f) => `${f.path}:${f.content.length}`).join("|"),
+    [files]
+  );
   const activeFile = files.find((f) => f.path === activePath) ?? files[0];
 
   const persistBuild = useCallback(
@@ -296,7 +301,7 @@ export default function Build() {
         historyRef.current = doneHistory;
         setHistory(doneHistory);
 
-        await persistBuild(prompt, parsed);
+        void persistBuild(prompt, parsed).catch(() => {});
         toast.success(isFollowUp ? "Updated" : "Build ready");
       } catch (e: unknown) {
         const err = e as { name?: string; message?: string };
@@ -330,11 +335,17 @@ export default function Build() {
       loadingRef.current = true;
       setLoading(true);
       try {
-        await processPrompt(first);
+        let next: string | undefined = first;
+        while (next) {
+          await processPrompt(next);
+          next = queueRef.current.shift();
+          setQueuedCount(queueRef.current.length);
+          if (!next) break;
+        }
       } finally {
         loadingRef.current = false;
         setLoading(false);
-        setQueuedCount(0);
+        setQueuedCount(queueRef.current.length);
       }
     },
     [processPrompt]
@@ -347,9 +358,9 @@ export default function Build() {
       if (!next) return;
       setDraft("");
       if (loadingRef.current) {
-        toast.message(
-          "A website is already generating — wait or press Stop before sending another prompt"
-        );
+        queueRef.current.push(next);
+        setQueuedCount(queueRef.current.length);
+        toast.message(`Queued · ${queueRef.current.length} pending`);
         return;
       }
       await drainQueue(next);
@@ -376,6 +387,7 @@ export default function Build() {
   };
 
   const downloadZip = async () => {
+    if (!files.length) return;
     if (files.length === 1) {
       const f = files[0];
       const blob = new Blob([f.content], { type: "text/plain" });
@@ -387,16 +399,23 @@ export default function Build() {
       URL.revokeObjectURL(url);
       return;
     }
-    const bundle = files
-      .map((f) => `// ===== ${f.path} =====\n${f.content}\n`)
-      .join("\n");
-    const blob = new Blob([bundle], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "matrix-project.txt";
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const zip = new JSZip();
+      for (const f of files) {
+        zip.file(f.path.replace(/^\/+/, ""), f.content);
+      }
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "matrix-project.zip";
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Downloaded zip");
+    } catch (e) {
+      console.error(e);
+      toast.error("Could not build zip — try copying files instead");
+    }
   };
 
   const copyActive = async () => {
@@ -599,6 +618,7 @@ export default function Build() {
             >
               {previewHtml && !isSynthesizing ? (
                 <iframe
+                  key={previewKey}
                   srcDoc={previewHtml}
                   className="w-full h-full border-0"
                   sandbox="allow-scripts allow-same-origin"
@@ -635,26 +655,43 @@ export default function Build() {
               )}
             </div>
           ) : (
-            <div className="w-full h-full flex flex-col">
-              {activeFile && !streaming && (
-                <div className="px-3 py-1.5 text-[11px] font-mono text-white/50 border-b border-white/10 flex items-center justify-between">
+            <div className="w-full h-full flex flex-col min-h-0">
+              {activeFile && (
+                <div className="px-3 py-1.5 text-[11px] font-mono text-white/50 border-b border-white/10 flex items-center justify-between shrink-0">
                   <span>{activeFile.path}</span>
                   <span className="text-white/30">
-                    {activeFile.content.length.toLocaleString()} chars ·{" "}
-                    {activeFile.language}
+                    {(streaming ? streamBuffer.length : activeFile.content.length).toLocaleString()}{" "}
+                    chars · {activeFile.language}
+                    {!streaming && " · editable"}
                   </span>
                 </div>
               )}
-              <pre className="p-4 text-xs font-mono text-green-300 overflow-auto flex-1 whitespace-pre-wrap leading-relaxed">
-                {codeToShow || (
-                  <span className="text-white/30">
-                    // Code will appear here as the AI generates it
-                  </span>
-                )}
-                {streaming && (
+              {streaming ? (
+                <pre className="p-4 text-xs font-mono text-green-300 overflow-auto flex-1 min-h-0 whitespace-pre-wrap leading-relaxed">
+                  {codeToShow || (
+                    <span className="text-white/30">
+                      // Code will appear here as the AI generates it
+                    </span>
+                  )}
                   <span className="animate-pulse text-blue-400">▍</span>
-                )}
-              </pre>
+                </pre>
+              ) : (
+                <textarea
+                  className="flex-1 min-h-0 w-full p-4 text-xs font-mono text-green-300 bg-transparent border-0 outline-none resize-none leading-relaxed focus-visible:ring-0"
+                  value={activeFile?.content ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    const path = activePath || activeFile?.path;
+                    if (!path) return;
+                    setFiles((prev) =>
+                      prev.map((f) => (f.path === path ? { ...f, content: v } : f)),
+                    );
+                  }}
+                  spellCheck={false}
+                  placeholder="// Code will appear here after generation — you can edit freely"
+                  disabled={!activeFile}
+                />
+              )}
             </div>
           )}
         </div>

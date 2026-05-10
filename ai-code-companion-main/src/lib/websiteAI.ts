@@ -1,7 +1,33 @@
-import { getOpenRouterHeaders, OPENROUTER_CHAT_URL, VIBE_MODEL, explainOpenRouterError } from "@/lib/openrouter";
+import { appEnv, isMistralConfigured } from "@/lib/env";
 
 export type AIMessage = { role: "system" | "user" | "assistant" | string; content: string };
-export type AIProvider = "DeepSeek";
+export type AIProvider = "Mistral";
+
+const chatCompletionsUrl = () => {
+  const base = appEnv.mistral.apiBaseUrl.replace(/\/$/, "");
+  return `${base}/chat/completions`;
+};
+
+function mistralHeaders(): Record<string, string> {
+  if (!isMistralConfigured) {
+    throw new Error("Mistral is not configured. Set VITE_MISTRAL_API_KEY (and VITE_MISTRAL_MODEL) in your environment.");
+  }
+  return {
+    Authorization: `Bearer ${appEnv.mistral.apiKey}`,
+    "Content-Type": "application/json",
+  };
+}
+
+function explainMistralError(status: number, detail = "") {
+  const message = detail.toLowerCase();
+  if (status === 401 || status === 403) return "Mistral rejected the API key";
+  if (status === 402 || status === 429) return "Mistral quota or rate limit — wait and retry";
+  if (status === 408 || message.includes("timeout")) {
+    return "The request timed out. Try a shorter prompt or generate again";
+  }
+  if (status >= 500) return "Mistral is temporarily unavailable";
+  return `Mistral request failed (${status})`;
+}
 
 async function withTimeout<T>(
   task: (signal: AbortSignal) => Promise<T>,
@@ -23,13 +49,17 @@ async function withTimeout<T>(
   }
 }
 
-function parseOpenRouterContent(data: any): string {
-  const message = data?.choices?.[0]?.message;
+function parseChatContent(data: unknown): string {
+  const d = data as Record<string, unknown>;
+  const message = d?.choices && Array.isArray(d.choices) ? (d.choices[0] as Record<string, unknown>)?.message : null;
   const direct = message?.content;
   if (typeof direct === "string") return direct.trim();
   if (Array.isArray(direct)) {
     return direct
-      .map((part) => (typeof part?.text === "string" ? part.text : typeof part === "string" ? part : ""))
+      .map((part: unknown) => {
+        const p = part as Record<string, unknown>;
+        return typeof p?.text === "string" ? p.text : typeof part === "string" ? part : "";
+      })
       .join("")
       .trim();
   }
@@ -40,13 +70,13 @@ function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
-async function callOpenRouter(messages: AIMessage[], signal?: AbortSignal): Promise<string> {
-  const response = await fetch(OPENROUTER_CHAT_URL, {
+async function callMistral(messages: AIMessage[], signal?: AbortSignal): Promise<string> {
+  const response = await fetch(chatCompletionsUrl(), {
     method: "POST",
-    headers: getOpenRouterHeaders(),
+    headers: mistralHeaders(),
     signal,
     body: JSON.stringify({
-      model: VIBE_MODEL,
+      model: appEnv.mistral.model,
       messages,
       temperature: 0.15,
       max_tokens: 8192,
@@ -55,34 +85,35 @@ async function callOpenRouter(messages: AIMessage[], signal?: AbortSignal): Prom
 
   const text = await response.text();
   if (!response.ok) {
-    throw new Error(`${explainOpenRouterError(response.status, text)}${text ? `: ${text.slice(0, 220)}` : ""}`);
+    throw new Error(`${explainMistralError(response.status, text)}${text ? `: ${text.slice(0, 220)}` : ""}`);
   }
 
-  let data: any;
+  let data: unknown;
   try {
     data = JSON.parse(text);
   } catch {
     return text.trim();
   }
-  const content = parseOpenRouterContent(data);
+  const content = parseChatContent(data);
   if (!content) {
-    const providerError = data?.error?.message || data?.choices?.[0]?.finish_reason;
-    throw new Error(providerError ? `DeepSeek returned no HTML: ${providerError}` : "DeepSeek returned an empty response");
+    const errObj = data as { error?: { message?: string }; choices?: { finish_reason?: string }[] };
+    const providerError = errObj?.error?.message || errObj?.choices?.[0]?.finish_reason;
+    throw new Error(providerError ? `Mistral returned no HTML: ${providerError}` : "Mistral returned an empty response");
   }
   return content;
 }
 
-async function streamOpenRouter(
+async function streamMistral(
   messages: AIMessage[],
   onDelta: (chunk: string, full: string) => void,
   signal: AbortSignal,
 ): Promise<string> {
-  const response = await fetch(OPENROUTER_CHAT_URL, {
+  const response = await fetch(chatCompletionsUrl(), {
     method: "POST",
-    headers: getOpenRouterHeaders(),
+    headers: mistralHeaders(),
     signal,
     body: JSON.stringify({
-      model: VIBE_MODEL,
+      model: appEnv.mistral.model,
       messages,
       temperature: 0.15,
       max_tokens: 8192,
@@ -92,7 +123,7 @@ async function streamOpenRouter(
 
   if (!response.ok || !response.body) {
     const detail = await response.text().catch(() => "");
-    throw new Error(`${explainOpenRouterError(response.status, detail)}${detail ? `: ${detail.slice(0, 220)}` : ""}`);
+    throw new Error(`${explainMistralError(response.status, detail)}${detail ? `: ${detail.slice(0, 220)}` : ""}`);
   }
 
   const reader = response.body.getReader();
@@ -110,13 +141,26 @@ async function streamOpenRouter(
     if (!payload || payload === "[DONE]") return;
 
     try {
-      const json = JSON.parse(payload);
+      const json = JSON.parse(payload) as {
+        error?: { message?: string };
+        choices?: { delta?: { content?: string | unknown[] } }[];
+      };
       if (json?.error?.message) {
         providerError = json.error.message;
         return;
       }
-      const delta = json?.choices?.[0]?.delta?.content;
-      if (typeof delta === "string" && delta) {
+      const deltaRaw = json?.choices?.[0]?.delta?.content;
+      let delta = "";
+      if (typeof deltaRaw === "string") delta = deltaRaw;
+      else if (Array.isArray(deltaRaw)) {
+        delta = deltaRaw
+          .map((part: unknown) => {
+            const p = part as Record<string, unknown>;
+            return typeof p?.text === "string" ? p.text : "";
+          })
+          .join("");
+      }
+      if (delta) {
         full += delta;
         onDelta(delta, full);
       }
@@ -141,8 +185,8 @@ async function streamOpenRouter(
   if (buffer.trim()) buffer.split("\n").forEach(processLine);
 
   if (full.trim()) return full.trim();
-  if (providerError) throw new Error(`DeepSeek stream failed: ${providerError}`);
-  throw new Error("DeepSeek returned an empty stream");
+  if (providerError) throw new Error(`Mistral stream failed: ${providerError}`);
+  throw new Error("Mistral returned an empty stream");
 }
 
 export async function streamWebsiteAI(
@@ -152,13 +196,13 @@ export async function streamWebsiteAI(
 ): Promise<{ content: string; provider: AIProvider }> {
   return withTimeout(async (signal) => {
     try {
-      const content = await streamOpenRouter(messages, onDelta, signal);
-      return { content, provider: "DeepSeek" as const };
+      const content = await streamMistral(messages, onDelta, signal);
+      return { content, provider: "Mistral" as const };
     } catch (error) {
       if (isAbortError(error) || signal.aborted) throw error;
-      const content = await callOpenRouter(messages, signal);
+      const content = await callMistral(messages, signal);
       onDelta(content, content);
-      return { content, provider: "DeepSeek" as const };
+      return { content, provider: "Mistral" as const };
     }
   }, options.timeoutMs ?? 180_000, options.signal);
 }
@@ -168,7 +212,7 @@ export async function completeWebsiteAI(
   options: { timeoutMs?: number } = {},
 ): Promise<{ content: string; provider: AIProvider }> {
   return withTimeout(async (signal) => {
-    const content = await callOpenRouter(messages, signal);
-    return { content, provider: "DeepSeek" as const };
+    const content = await callMistral(messages, signal);
+    return { content, provider: "Mistral" as const };
   }, options.timeoutMs ?? 120_000);
 }

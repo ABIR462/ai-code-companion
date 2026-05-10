@@ -384,7 +384,7 @@ export default function Dashboard() {
     }
   };
 
-  /* ── Regenerate with DeepSeek ── */
+  /* ── Regenerate with Mistral ── */
   const regen = async () => {
     if (!active) return;
     setRegenLoading(true);
@@ -489,7 +489,7 @@ export default function Dashboard() {
               <p className="font-semibold">Supernova Studio</p>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Generate prompt-based images with Gemini Flash and reuse them in your websites.
+              Generate prompt-based images in Supernova and reuse them in your websites.
             </p>
             <p className="text-xs text-primary font-mono mt-3 group-hover:underline">Enter rooms →</p>
           </button>
