@@ -30,7 +30,7 @@ export function Hero({
   }, []);
 
   return (
-    <section id="top" className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden pt-20">
+    <section id="top" className="relative min-h-[92svh] flex flex-col items-center justify-center overflow-hidden pt-16 sm:pt-20">
       {/* Layered background */}
       <div className="absolute inset-0 bg-background" />
       <div className="absolute inset-0 grid-bg opacity-20 [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,black_30%,transparent_100%)]" />
@@ -44,31 +44,31 @@ export function Hero({
       <div className="absolute bottom-40 left-32 w-2 h-2 rounded-full bg-primary/50 animate-float" style={{ animationDelay: "2s" }} />
       <div className="absolute bottom-32 right-20 w-4 h-4 rounded-full bg-accent/40 animate-float blur-[2px]" style={{ animationDelay: "0.5s" }} />
 
-      <div className="container relative max-w-3xl text-center px-4 py-16">
+      <div className="container relative max-w-3xl text-center px-4 py-10 sm:py-16">
         {/* Badge */}
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass border border-primary/30 text-xs text-primary font-mono mb-8 animate-fade-up">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full glass border border-primary/30 text-[11px] sm:text-xs text-primary font-mono mb-6 sm:mb-8 animate-fade-up">
           <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
           Powered by Matrixbook AI
           <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" style={{ animationDelay: "0.5s" }} />
         </div>
 
         {/* Headline */}
-        <h1 className="font-display text-5xl sm:text-6xl md:text-8xl font-bold leading-[1.0] mb-6 animate-fade-up tracking-tight">
-          Turn words into
+        <h1 className="font-display text-[42px] leading-[0.98] sm:text-6xl md:text-7xl lg:text-8xl font-bold mb-5 sm:mb-6 animate-fade-up tracking-tight">
+          Turn prompts into
           <br />
           <span className="text-gradient-brand">websites.</span>
           <br />
-          <span className="text-foreground/40 text-4xl sm:text-5xl md:text-6xl font-normal">instantly.</span>
+          <span className="text-foreground/40 text-[28px] sm:text-5xl md:text-6xl font-normal">instantly.</span>
         </h1>
 
-        <p className="text-base sm:text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 animate-fade-up leading-relaxed">
+        <p className="text-[13px] sm:text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-7 sm:mb-10 animate-fade-up leading-relaxed">
           Describe any web page in plain English. Matrixbook generates beautiful,
           production-ready HTML, crafts images in Supernova, and connects you with
           a realtime creator community — no code required.
         </p>
 
         {/* Prompt composer */}
-        <div id="builder" className="max-w-2xl mx-auto animate-fade-up mb-10">
+        <div id="builder" className="max-w-2xl mx-auto animate-fade-up mb-8 sm:mb-10">
           <PromptComposer
             onSubmit={(prompt, attachments) => onSubmit(prompt, attachments)}
             loading={loading}
@@ -76,13 +76,13 @@ export function Hero({
         </div>
 
         {/* Trust badges */}
-        <div className="flex flex-wrap items-center justify-center gap-6 animate-fade-up">
+        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 animate-fade-up">
           {[
             { icon: Zap,      label: "Generates in seconds"   },
             { icon: Shield,   label: "Firebase secured"       },
             { icon: Sparkles, label: "Visual editor included" },
           ].map(({ icon: Icon, label }) => (
-            <div key={label} className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div key={label} className="flex items-center gap-2 text-[11px] sm:text-xs text-muted-foreground">
               <Icon className="w-3.5 h-3.5 text-primary" />
               {label}
             </div>

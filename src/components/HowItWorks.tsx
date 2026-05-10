@@ -51,12 +51,12 @@ export function HowItWorks() {
         {/* Header */}
         <div className="max-w-2xl mb-20">
           <p className="font-mono text-xs text-primary tracking-widest uppercase mb-4"></p>
-          <h2 className="font-display text-4xl md:text-6xl font-bold leading-tight mb-5">
+          <h2 className="font-display text-3xl sm:text-4xl md:text-6xl font-bold leading-tight mb-4 sm:mb-5">
             From idea to website
             <br />
             <span className="text-gradient">in four steps.</span>
           </h2>
-          <p className="text-muted-foreground text-lg leading-relaxed">
+          <p className="text-muted-foreground text-[13px] sm:text-lg leading-relaxed">
             No design skills. No coding. Just describe what you want and watch it come to life.
           </p>
         </div>

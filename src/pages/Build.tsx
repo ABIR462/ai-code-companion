@@ -39,7 +39,7 @@ type ProjectFile = { path: string; content: string; language: string };
 const HTML_SYSTEM = `You are MATRIXBOOK CORE, the world's most advanced neural web architect.
 
 OUTPUT FORMAT — STRICT ADHERENCE REQUIRED:
-Return ONLY one fenced code block containing a single-file HTML solution. No preamble or post-text.
+Return ONLY one fenced code block for \`index.html\`. No preamble or post-text.
 
 \`\`\`html path=index.html
 <!DOCTYPE html>
@@ -57,6 +57,19 @@ CORE ARCHITECTURAL PRINCIPLES:
 - SEMANTICS: Valid HTML5 structure for optimal SEO and accessibility.
 
 Special Instruction: Lead with visual impact. Every design must feel "custom" and expensive.`;
+
+function hashString(input: string): string {
+  // Fast non-cryptographic hash (djb2-ish) for stable iframe keys.
+  let h1 = 5381;
+  let h2 = 52711;
+  for (let i = 0; i < input.length; i++) {
+    const c = input.charCodeAt(i);
+    h1 = (h1 * 33) ^ c;
+    h2 = (h2 * 33) ^ c;
+  }
+  // force unsigned
+  return `${(h1 >>> 0).toString(16)}${(h2 >>> 0).toString(16)}`;
+}
 
 function langFromPath(p: string): string {
   const ext = p.split(".").pop()?.toLowerCase() ?? "";
@@ -144,6 +157,8 @@ export default function Build() {
   const [queuedCount, setQueuedCount] = useState(0);
   const [streamBuffer, setStreamBuffer] = useState("");
   const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const [codeFontPx, setCodeFontPx] = useState(12);
+  const [wrapCode, setWrapCode] = useState(false);
 
   const didAutoRun = useRef(false);
   const filesRef = useRef<ProjectFile[]>(files);
@@ -174,7 +189,7 @@ export default function Build() {
     [files]
   );
   const previewKey = useMemo(
-    () => files.map((f) => `${f.path}:${f.content.length}`).join("|"),
+    () => hashString(files.map((f) => `${f.path}\n${f.content}`).join("\n\n---\n\n")),
     [files]
   );
   const activeFile = files.find((f) => f.path === activePath) ?? files[0];
@@ -585,7 +600,7 @@ export default function Build() {
 
       {/* Content */}
       <div className="flex-1 flex overflow-hidden">
-        {tab === "code" && files.length > 0 && (
+        {tab === "code" && files.length > 0 && !isMobile && (
           <aside className="w-52 shrink-0 border-r border-white/10 bg-zinc-950/50 overflow-auto">
             <div className="px-3 py-2 text-[10px] font-mono uppercase tracking-wider text-white/40 flex items-center gap-1.5 border-b border-white/10">
               <FolderTree className="w-3 h-3" /> Files · {files.length}
@@ -658,39 +673,97 @@ export default function Build() {
             <div className="w-full h-full flex flex-col min-h-0">
               {activeFile && (
                 <div className="px-3 py-1.5 text-[11px] font-mono text-white/50 border-b border-white/10 flex items-center justify-between shrink-0">
-                  <span>{activeFile.path}</span>
-                  <span className="text-white/30">
-                    {(streaming ? streamBuffer.length : activeFile.content.length).toLocaleString()}{" "}
-                    chars · {activeFile.language}
-                    {!streaming && " · editable"}
-                  </span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    {isMobile ? (
+                      <select
+                        value={activeFile.path}
+                        onChange={(e) => setActivePath(e.target.value)}
+                        className="max-w-[60vw] truncate text-[11px] font-mono bg-zinc-950 border border-white/10 rounded-md px-2 py-1 text-white/80"
+                      >
+                        {files.map((f) => (
+                          <option key={f.path} value={f.path}>
+                            {f.path}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="truncate">{activeFile.path}</span>
+                    )}
+                    <span className="text-white/25 text-[10px] truncate">
+                      {activeFile.language}
+                      {!streaming && " · editable"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="hidden sm:flex items-center gap-2 text-white/40">
+                      <span className="text-[10px]">A</span>
+                      <input
+                        type="range"
+                        min="10"
+                        max="18"
+                        step="1"
+                        value={codeFontPx}
+                        onChange={(e) => setCodeFontPx(Number(e.target.value))}
+                        className="w-24 accent-blue-500"
+                        aria-label="Code font size"
+                      />
+                      <span className="text-[10px]">A</span>
+                    </div>
+                    <button
+                      onClick={() => setWrapCode((v) => !v)}
+                      className={`text-[10px] font-mono px-2 py-1 rounded-md border transition ${
+                        wrapCode ? "bg-blue-600/15 border-blue-400/40 text-blue-200" : "border-white/10 text-white/45 hover:text-white/75 hover:border-white/30"
+                      }`}
+                      title="Toggle line wrap"
+                    >
+                      {wrapCode ? "Wrap" : "No wrap"}
+                    </button>
+                  </div>
                 </div>
               )}
               {streaming ? (
-                <pre className="p-4 text-xs font-mono text-green-300 overflow-auto flex-1 min-h-0 whitespace-pre-wrap leading-relaxed">
-                  {codeToShow || (
-                    <span className="text-white/30">
-                      // Code will appear here as the AI generates it
-                    </span>
-                  )}
-                  <span className="animate-pulse text-blue-400">▍</span>
-                </pre>
+                <div className="flex-1 min-h-0 flex items-center justify-center">
+                  <VibeLoader />
+                </div>
               ) : (
-                <textarea
-                  className="flex-1 min-h-0 w-full p-4 text-xs font-mono text-green-300 bg-transparent border-0 outline-none resize-none leading-relaxed focus-visible:ring-0"
-                  value={activeFile?.content ?? ""}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    const path = activePath || activeFile?.path;
-                    if (!path) return;
-                    setFiles((prev) =>
-                      prev.map((f) => (f.path === path ? { ...f, content: v } : f)),
-                    );
-                  }}
-                  spellCheck={false}
-                  placeholder="// Code will appear here after generation — you can edit freely"
-                  disabled={!activeFile}
-                />
+                <>
+                  {/* Mobile font slider */}
+                  <div className="sm:hidden px-3 py-2 border-b border-white/10 text-[10px] text-white/55 flex items-center gap-2 shrink-0">
+                    <span className="font-mono">Size</span>
+                    <input
+                      type="range"
+                      min="10"
+                      max="18"
+                      step="1"
+                      value={codeFontPx}
+                      onChange={(e) => setCodeFontPx(Number(e.target.value))}
+                      className="flex-1 accent-blue-500"
+                      aria-label="Code font size"
+                    />
+                    <span className="font-mono w-8 text-right">{codeFontPx}px</span>
+                  </div>
+
+                  <textarea
+                    className="flex-1 min-h-0 w-full p-4 font-mono text-green-300 bg-transparent border-0 outline-none resize-none focus-visible:ring-0"
+                    style={{
+                      fontSize: `${codeFontPx}px`,
+                      lineHeight: 1.55,
+                      whiteSpace: wrapCode ? "pre-wrap" : "pre",
+                      overflowWrap: wrapCode ? "anywhere" : "normal",
+                    }}
+                    value={activeFile?.content ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      const path = activePath || activeFile?.path;
+                      if (!path) return;
+                      setFiles((prev) => prev.map((f) => (f.path === path ? { ...f, content: v } : f)));
+                    }}
+                    spellCheck={false}
+                    placeholder="// Code will appear here after generation — you can edit freely"
+                    disabled={!activeFile}
+                  />
+                </>
               )}
             </div>
           )}

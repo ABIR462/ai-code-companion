@@ -42,7 +42,7 @@ import {
   SupernovaConversation,
   SupernovaMessage,
 } from "@/lib/supernovaStore";
-import { isSupernovaChatConfigured } from "@/lib/env";
+import { isOpenRouterConfigured } from "@/lib/env";
 import {
   ChatMessage,
   ChatPart,
@@ -190,8 +190,8 @@ export default function Supernova() {
       ? { isImage: true, prompt: text || (attachments.length ? attachEditDefault : "") }
       : detectImageIntent(text);
 
-    if (!intent.isImage && !isSupernovaChatConfigured) {
-      toast.error("Configure VITE_OPENROUTER_API_KEY or VITE_NVIDIA_API_KEY for Supernova chat.");
+    if (!intent.isImage && !isOpenRouterConfigured) {
+      toast.error("Configure VITE_OPENROUTER_API_KEY for Supernova chat.");
       return;
     }
 
@@ -234,7 +234,7 @@ export default function Supernova() {
           referenceDataUrls: userImages.length ? userImages : undefined,
         });
         let caption = "";
-        if (isSupernovaChatConfigured) {
+        if (isOpenRouterConfigured) {
           try {
             caption = await chatOnce(
               [
@@ -376,11 +376,9 @@ export default function Supernova() {
   /* ── Build chat panel (reused in both desktop & mobile drawer) ── */
   const chatPanel = (
     <div className="flex flex-col h-full bg-[#131314]">
-      {!isSupernovaChatConfigured && (
+      {!isOpenRouterConfigured && (
         <div className="shrink-0 mx-3 mt-3 px-3 py-2 rounded-xl border border-amber-500/35 bg-amber-500/10 text-[11px] text-amber-100/95 leading-snug">
-          Set <span className="font-mono text-amber-200">VITE_OPENROUTER_API_KEY</span> (recommended) or{" "}
-          <span className="font-mono text-amber-200">VITE_NVIDIA_API_KEY</span> for chat. Images use OpenRouter when
-          configured.
+          Set <span className="font-mono text-amber-200">VITE_OPENROUTER_API_KEY</span> for chat + image generation.
         </div>
       )}
       {/* Messages */}

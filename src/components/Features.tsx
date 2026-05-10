@@ -28,7 +28,7 @@ const FEATURES = [
   {
     icon: Image,
     title: "Real Image Integration",
-    desc: "AI-powered image generation in Supernova — NVIDIA Qwen-Image (GenAI) with Nemotron captions when configured.",
+    desc: "AI-powered image generation in Supernova — text-to-image and image editing with OpenRouter image modalities.",
     color: "text-orange-400",
     bg: "bg-orange-500/10 border-orange-500/20",
   },
@@ -63,7 +63,7 @@ const FEATURES = [
   {
     icon: Sparkles,
     title: "Supernova AI Studio",
-    desc: "Chat with NVIDIA Nemotron and generate images in a polished Matrixbook studio interface.",
+    desc: "Chat and generate images in a polished Matrixbook studio interface — fast, multimodal, and exportable.",
     color: "text-fuchsia-400",
     bg: "bg-fuchsia-500/10 border-fuchsia-500/20",
   },
@@ -80,12 +80,12 @@ export function Features() {
         {/* Header */}
         <div className="max-w-2xl mb-16">
           <p className="font-mono text-xs text-primary tracking-widest uppercase mb-4"></p>
-          <h2 className="font-display text-4xl md:text-6xl font-bold leading-tight mb-5">
+          <h2 className="font-display text-3xl sm:text-4xl md:text-6xl font-bold leading-tight mb-4 sm:mb-5">
             Everything you need
             <br />
             <span className="text-gradient">to ship faster.</span>
           </h2>
-          <p className="text-muted-foreground text-lg leading-relaxed">
+          <p className="text-muted-foreground text-[13px] sm:text-lg leading-relaxed">
             Matrixbook combines the best AI model for code with a real-time visual editor,
             realtime community rooms, and commerce-ready templates.
           </p>

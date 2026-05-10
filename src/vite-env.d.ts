@@ -16,16 +16,10 @@ interface ImportMetaEnv {
   readonly VITE_MISTRAL_API_KEY: string;
   readonly VITE_MISTRAL_MODEL: string;
   readonly VITE_MISTRAL_API_BASE_URL: string;
-  readonly VITE_NVIDIA_API_KEY: string;
-  readonly VITE_NVIDIA_API_BASE_URL: string;
-  readonly VITE_NVIDIA_CHAT_MODEL: string;
-  readonly VITE_NVIDIA_GENAI_BASE_URL: string;
-  readonly VITE_NVIDIA_IMAGE_GENAI_PATH: string;
-  readonly VITE_NVIDIA_IMAGE_STEPS: string;
-  readonly VITE_NVIDIA_IMAGE_POLLINATIONS_FALLBACK: string;
   readonly VITE_OPENROUTER_API_KEY: string;
   readonly VITE_OPENROUTER_CHAT_MODEL: string;
   readonly VITE_OPENROUTER_IMAGE_MODEL: string;
+  readonly VITE_OPENROUTER_API_BASE_URL: string;
 }
 
 interface ImportMeta {

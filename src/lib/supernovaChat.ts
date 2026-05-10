@@ -1,6 +1,6 @@
-import { appEnv, isNvidiaConfigured, isOpenRouterConfigured } from "@/lib/env";
+import { appEnv, isOpenRouterConfigured } from "@/lib/env";
 
-const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
+const OPENROUTER_CHAT_URL = `${appEnv.openrouter.apiBaseUrl.replace(/\/$/, "")}/chat/completions`;
 
 function openRouterHeaders(): Record<string, string> {
   if (!isOpenRouterConfigured) {
@@ -22,106 +22,6 @@ export type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string | ChatPart[];
 };
-
-const nvidiaChatUrl = () => {
-  const base = appEnv.nvidia.apiBaseUrl.replace(/\/$/, "");
-  return `${base}/chat/completions`;
-};
-
-function nvidiaHeaders(): Record<string, string> {
-  if (!isNvidiaConfigured) {
-    throw new Error(
-      "NVIDIA API is not configured. Set VITE_NVIDIA_API_KEY (and optionally VITE_NVIDIA_CHAT_MODEL) for Supernova.",
-    );
-  }
-  return {
-    Authorization: `Bearer ${appEnv.nvidia.apiKey}`,
-    "Content-Type": "application/json",
-  };
-}
-
-function nvidiaGenAiInvokeUrl(): string {
-  const base = appEnv.nvidia.genAiBaseUrl.replace(/\/$/, "");
-  const seg = appEnv.nvidia.imageGenAiPath.replace(/^\/+|\/+$/g, "");
-  return `${base}/genai/${seg}`;
-}
-
-/** Width/height use NVIDIA GenAI–allowed sizes (multiples in 768–1344 range). */
-function ratioToNvidiaGenAiSize(ratio: ImageRatio): { width: number; height: number } {
-  switch (ratio) {
-    case "16:9":
-      return { width: 1280, height: 768 };
-    case "9:16":
-      return { width: 768, height: 1280 };
-    case "3:2":
-      return { width: 1216, height: 832 };
-    case "2:3":
-      return { width: 832, height: 1216 };
-    case "4:3":
-      return { width: 1152, height: 896 };
-    case "1:1":
-    default:
-      return { width: 1024, height: 1024 };
-  }
-}
-
-type GenAiArtifact = { base64?: string; finishReason?: string; seed?: number };
-
-async function generateOneNvidiaQwenImage(
-  prompt: string,
-  ratio: ImageRatio,
-  seed: number,
-  signal?: AbortSignal,
-): Promise<{ url: string; seed: number }> {
-  const { width, height } = ratioToNvidiaGenAiSize(ratio);
-  const body: Record<string, unknown> = {
-    prompt,
-    width,
-    height,
-    seed: seed >>> 0,
-  };
-  if (appEnv.nvidia.imageSteps > 0) {
-    body.steps = appEnv.nvidia.imageSteps;
-  }
-
-  const resp = await fetch(nvidiaGenAiInvokeUrl(), {
-    method: "POST",
-    headers: {
-      ...nvidiaHeaders(),
-      Accept: "application/json",
-    },
-    body: JSON.stringify(body),
-    signal,
-  });
-
-  const text = await resp.text();
-  if (!resp.ok) {
-    throw new Error(`NVIDIA GenAI (${appEnv.nvidia.imageGenAiPath}) ${resp.status}: ${text.slice(0, 400)}`);
-  }
-
-  let data: { artifacts?: GenAiArtifact[] };
-  try {
-    data = JSON.parse(text) as { artifacts?: GenAiArtifact[] };
-  } catch {
-    throw new Error(`NVIDIA GenAI returned non-JSON: ${text.slice(0, 240)}`);
-  }
-
-  const art = data?.artifacts?.[0];
-  if (!art?.base64) {
-    throw new Error("NVIDIA GenAI returned no image (missing artifacts[0].base64)");
-  }
-  if (art.finishReason === "CONTENT_FILTERED") {
-    throw new Error("Image blocked by NVIDIA content safety filter");
-  }
-  if (art.finishReason === "ERROR") {
-    throw new Error("NVIDIA image generation failed (finishReason: ERROR)");
-  }
-
-  return {
-    url: `data:image/jpeg;base64,${art.base64}`,
-    seed: typeof art.seed === "number" ? art.seed : seed,
-  };
-}
 
 function toOpenAIMessages(messages: ChatMessage[]): { role: string; content: unknown }[] {
   const systemChunks: string[] = [];
@@ -215,31 +115,9 @@ async function chatOnceNvidia(
   messages: ChatMessage[],
   options: { signal?: AbortSignal; maxTokens?: number; temperature?: number } = {},
 ): Promise<string> {
-  const openaiMessages = toOpenAIMessages(messages);
-  const resp = await fetch(nvidiaChatUrl(), {
-    method: "POST",
-    headers: nvidiaHeaders(),
-    signal: options.signal,
-    body: JSON.stringify({
-      model: appEnv.nvidia.chatModel,
-      messages: openaiMessages,
-      temperature: options.temperature ?? 0.7,
-      max_tokens: options.maxTokens ?? 1024,
-    }),
-  });
-  const txt = await resp.text();
-  if (!resp.ok) {
-    throw new Error(`NVIDIA ${resp.status}: ${txt.slice(0, 240)}`);
-  }
-  let data: unknown;
-  try {
-    data = JSON.parse(txt);
-  } catch {
-    return txt.trim();
-  }
-  const text = extractText(data);
-  if (!text) throw new Error("NVIDIA returned an empty response");
-  return text;
+  void messages;
+  void options;
+  throw new Error("NVIDIA chat removed. Use OpenRouter.");
 }
 
 export async function chatOnce(
@@ -249,10 +127,7 @@ export async function chatOnce(
   if (isOpenRouterConfigured) {
     return chatOnceOpenRouter(messages, options);
   }
-  if (isNvidiaConfigured) {
-    return chatOnceNvidia(messages, options);
-  }
-  throw new Error("Configure VITE_OPENROUTER_API_KEY or VITE_NVIDIA_API_KEY for Supernova chat.");
+  throw new Error("Configure VITE_OPENROUTER_API_KEY for Supernova chat.");
 }
 
 function processSseLine(
@@ -343,47 +218,10 @@ async function streamNvidiaChat(
   onDelta: (chunk: string, full: string) => void,
   options: { signal?: AbortSignal; maxTokens?: number; temperature?: number } = {},
 ): Promise<string> {
-  const openaiMessages = toOpenAIMessages(messages);
-  const resp = await fetch(nvidiaChatUrl(), {
-    method: "POST",
-    headers: nvidiaHeaders(),
-    signal: options.signal,
-    body: JSON.stringify({
-      model: appEnv.nvidia.chatModel,
-      messages: openaiMessages,
-      temperature: options.temperature ?? 0.7,
-      max_tokens: options.maxTokens ?? 2048,
-      stream: true,
-    }),
-  });
-
-  if (!resp.ok || !resp.body) {
-    const detail = await resp.text().catch(() => "");
-    throw new Error(`NVIDIA ${resp.status}: ${detail.slice(0, 240)}`);
-  }
-
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let full = "";
-  const getFull = () => full;
-  const setFull = (s: string) => {
-    full = s;
-  };
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let idx: number;
-    while ((idx = buffer.indexOf("\n")) !== -1) {
-      const line = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 1);
-      processSseLine(line, onDelta, getFull, setFull);
-    }
-  }
-  if (buffer.trim()) buffer.split("\n").forEach((line) => processSseLine(line, onDelta, getFull, setFull));
-  return full.trim();
+  void messages;
+  void onDelta;
+  void options;
+  throw new Error("NVIDIA streaming removed. Use OpenRouter.");
 }
 
 export async function streamChat(
@@ -394,10 +232,7 @@ export async function streamChat(
   if (isOpenRouterConfigured) {
     return streamOpenRouterChat(messages, onDelta, options);
   }
-  if (isNvidiaConfigured) {
-    return streamNvidiaChat(messages, onDelta, options);
-  }
-  throw new Error("Configure VITE_OPENROUTER_API_KEY or VITE_NVIDIA_API_KEY for Supernova chat.");
+  throw new Error("Configure VITE_OPENROUTER_API_KEY for Supernova chat.");
 }
 
 export type ImageStyle =
@@ -603,54 +438,11 @@ export async function generateImage(opts: {
   const count = Math.min(Math.max(opts.count ?? 1, 1), 4);
   const finalPrompt = buildImagePrompt(opts.prompt, style, ratio);
   const refs = opts.referenceDataUrls?.filter(Boolean);
-  const out: GeneratedImage[] = [];
 
   if (isOpenRouterConfigured) {
-    try {
-      return await generateOpenRouterImageBatch(finalPrompt, style, ratio, count, refs, opts.signal);
-    } catch (err) {
-      console.warn("OpenRouter image generation failed:", err);
-    }
+    return await generateOpenRouterImageBatch(finalPrompt, style, ratio, count, refs, opts.signal);
   }
-
-  if (isNvidiaConfigured) {
-    try {
-      for (let i = 0; i < count; i++) {
-        const seed = (Date.now() + Math.floor(Math.random() * 1_000_000) + i) >>> 0;
-        const { url, seed: usedSeed } = await generateOneNvidiaQwenImage(
-          finalPrompt,
-          ratio,
-          seed,
-          opts.signal,
-        );
-        out.push({ url, prompt: finalPrompt, style, ratio, seed: usedSeed });
-      }
-      return out.slice(0, count);
-    } catch (err) {
-      console.warn("NVIDIA Qwen-Image GenAI failed:", err);
-      if (!appEnv.nvidia.imagePollinationsFallback) {
-        throw err instanceof Error ? err : new Error(String(err));
-      }
-    }
-  }
-
-  for (let i = 0; i < count; i++) {
-    const seed = Date.now() + Math.floor(Math.random() * 100000) + i;
-    const imageUrl = pollinationsUrl(finalPrompt, ratio, seed);
-    try {
-      await prefetchImageUrl(imageUrl, opts.signal);
-      out.push({ url: imageUrl, prompt: finalPrompt, style, ratio, seed });
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") throw e;
-      console.warn("Image prefetch failed:", e);
-    }
-    if (out.length >= count) break;
-  }
-
-  if (!out.length) {
-    throw new Error("Could not generate images — check your NVIDIA key, model path, and network");
-  }
-  return out.slice(0, count);
+  throw new Error("Configure VITE_OPENROUTER_API_KEY for image generation.");
 }
 
 export async function fileToDataUrl(file: File): Promise<string> {
