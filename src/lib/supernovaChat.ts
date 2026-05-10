@@ -304,13 +304,13 @@ type OrMsgImage = { image_url?: { url?: string } };
 
 function extractOpenRouterMessageImages(data: unknown): string[] {
   const d = data as {
-    choices?: { message?: { images?: OrMsgImage[]; content?: unknown } }[];
+    choices?: { message?: { images?: Array<OrMsgImage & { url?: string; data?: string }>; content?: unknown } }[];
   };
   const msg = d?.choices?.[0]?.message;
   const urls: string[] = [];
   if (Array.isArray(msg?.images)) {
     for (const im of msg.images) {
-      const u = im?.image_url?.url;
+      const u = im?.image_url?.url || (typeof (im as any)?.url === "string" ? (im as any).url : undefined);
       if (typeof u === "string" && u) urls.push(u);
     }
   }
@@ -329,19 +329,11 @@ async function generateOneOpenRouterImage(
   referenceDataUrls: string[] | undefined,
   signal?: AbortSignal,
 ): Promise<string[]> {
-  const parts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
-  if (referenceDataUrls?.length) {
-    for (const url of referenceDataUrls) {
-      parts.push({ type: "image_url", image_url: { url } });
-    }
-  }
-  parts.push({
-    type: "text",
-    text:
-      referenceDataUrls?.length && !prompt.trim()
-        ? "Using the attached image(s), produce an improved or edited result matching the instructions implied by style/ratio in the prompt."
-        : prompt,
-  });
+  const hasRefs = !!referenceDataUrls?.length;
+  const safePrompt =
+    hasRefs && !prompt.trim()
+      ? "Edit the attached image(s) to match the requested style and aspect ratio. Preserve key subject details unless asked."
+      : prompt;
 
   const resp = await fetch(OPENROUTER_CHAT_URL, {
     method: "POST",
@@ -349,7 +341,17 @@ async function generateOneOpenRouterImage(
     signal,
     body: JSON.stringify({
       model: appEnv.openrouter.imageModel,
-      messages: [{ role: "user", content: parts }],
+      messages: [
+        {
+          role: "user",
+          content: hasRefs
+            ? [
+                ...(referenceDataUrls ?? []).map((url) => ({ type: "image_url", image_url: { url } })),
+                { type: "text", text: safePrompt },
+              ]
+            : safePrompt,
+        },
+      ],
       modalities: ["image", "text"],
       max_tokens: 4096,
     }),
@@ -367,9 +369,12 @@ async function generateOneOpenRouterImage(
   }
   const urls = extractOpenRouterMessageImages(data);
   if (!urls.length) {
-    throw new Error(
-      "OpenRouter returned no images — confirm the model supports modalities image+text and your key has access.",
-    );
+    const maybeText = extractText(data);
+    throw new Error([
+      "OpenRouter returned no images.",
+      "Confirm the model supports `modalities: [image, text]` and your key has access.",
+      maybeText ? `Response text: ${maybeText.slice(0, 220)}` : "",
+    ].filter(Boolean).join(" "));
   }
   return urls;
 }
