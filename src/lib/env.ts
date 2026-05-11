@@ -10,6 +10,7 @@ type RuntimeEnvKey =
   | "VITE_MISTRAL_MODEL"
   | "VITE_MISTRAL_API_BASE_URL"
   | "VITE_OPENROUTER_API_KEY"
+  | "VITE_OPENROUTER_MODEL"
   | "VITE_OPENROUTER_CHAT_MODEL"
   | "VITE_OPENROUTER_IMAGE_MODEL"
   | "VITE_OPENROUTER_API_BASE_URL";
@@ -32,12 +33,13 @@ export const appEnv = {
   mistral: {
     apiKey: readEnv("VITE_MISTRAL_API_KEY"),
     model: readEnv("VITE_MISTRAL_MODEL", "codestral-2508"),
-    apiBaseUrl: readEnv("VITE_MISTRAL_API_BASE_URL", "https://api.mistral.ai/v1"),
+    apiBaseUrl: readEnv("VITE_MISTRAL_API_BASE_URL", "https://codestral.mistral.ai/v1"),
   },
   openrouter: {
     apiKey: readEnv("VITE_OPENROUTER_API_KEY"),
-    chatModel: readEnv("VITE_OPENROUTER_CHAT_MODEL", "openai/gpt-4o-mini"),
-    imageModel: readEnv("VITE_OPENROUTER_IMAGE_MODEL", "openai/gpt-5.4-image-2"),
+    chatModel:
+      readEnv("VITE_OPENROUTER_MODEL") || readEnv("VITE_OPENROUTER_CHAT_MODEL", "nvidia/nemotron-3-super-120b-a12b:free"),
+    imageModel: readEnv("VITE_OPENROUTER_IMAGE_MODEL"),
     apiBaseUrl: readEnv("VITE_OPENROUTER_API_BASE_URL", "https://openrouter.ai/api/v1"),
   },
 } as const;

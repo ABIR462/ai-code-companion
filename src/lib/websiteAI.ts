@@ -10,7 +10,7 @@ const chatCompletionsUrl = () => {
 
 function mistralHeaders(): Record<string, string> {
   if (!isMistralConfigured) {
-    throw new Error("Mistral is not configured. Set VITE_MISTRAL_API_KEY (and VITE_MISTRAL_MODEL) in your environment.");
+    throw new Error("Codestral is not configured. Set VITE_MISTRAL_API_KEY and VITE_MISTRAL_MODEL in your environment.");
   }
   return {
     Authorization: `Bearer ${appEnv.mistral.apiKey}`,
@@ -20,13 +20,13 @@ function mistralHeaders(): Record<string, string> {
 
 function explainMistralError(status: number, detail = "") {
   const message = detail.toLowerCase();
-  if (status === 401 || status === 403) return "Mistral rejected the API key";
-  if (status === 402 || status === 429) return "Mistral quota or rate limit — wait and retry";
+  if (status === 401 || status === 403) return "Codestral rejected the API key";
+  if (status === 402 || status === 429) return "Codestral quota or rate limit - wait and retry";
   if (status === 408 || message.includes("timeout")) {
     return "The request timed out. Try a shorter prompt or generate again";
   }
-  if (status >= 500) return "Mistral is temporarily unavailable";
-  return `Mistral request failed (${status})`;
+  if (status >= 500) return "Codestral is temporarily unavailable";
+  return `Codestral request failed (${status})`;
 }
 
 async function withTimeout<T>(
@@ -98,7 +98,7 @@ async function callMistral(messages: AIMessage[], signal?: AbortSignal): Promise
   if (!content) {
     const errObj = data as { error?: { message?: string }; choices?: { finish_reason?: string }[] };
     const providerError = errObj?.error?.message || errObj?.choices?.[0]?.finish_reason;
-    throw new Error(providerError ? `Mistral returned no HTML: ${providerError}` : "Mistral returned an empty response");
+    throw new Error(providerError ? `Codestral returned no HTML: ${providerError}` : "Codestral returned an empty response");
   }
   return content;
 }
@@ -185,8 +185,8 @@ async function streamMistral(
   if (buffer.trim()) buffer.split("\n").forEach(processLine);
 
   if (full.trim()) return full.trim();
-  if (providerError) throw new Error(`Mistral stream failed: ${providerError}`);
-  throw new Error("Mistral returned an empty stream");
+  if (providerError) throw new Error(`Codestral stream failed: ${providerError}`);
+  throw new Error("Codestral returned an empty stream");
 }
 
 export async function streamWebsiteAI(

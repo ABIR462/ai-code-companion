@@ -136,7 +136,7 @@ function processSseLine(
   getFull: () => string,
   setFull: (s: string) => void,
 ) {
-  let line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+  const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
   if (!line.trim() || line.startsWith(":")) return;
   if (!line.startsWith("data:")) return;
   const payload = line.slice(5).trim();
@@ -258,6 +258,15 @@ const RATIO_DIMS: Record<ImageRatio, { w: number; h: number }> = {
   "4:3": { w: 1200, h: 900 },
 };
 
+const OPENROUTER_IMAGE_ASPECT_RATIO: Record<ImageRatio, string> = {
+  "1:1": "1:1",
+  "16:9": "16:9",
+  "9:16": "9:16",
+  "3:2": "3:2",
+  "2:3": "2:3",
+  "4:3": "4:3",
+};
+
 const STYLE_HINTS: Record<ImageStyle, string> = {
   auto: "",
   realistic: "ultra realistic photography, sharp focus, natural lighting, 8k detail",
@@ -300,17 +309,17 @@ export function pollinationsUrl(prompt: string, ratio: ImageRatio, seed: number,
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${params.toString()}`;
 }
 
-type OrMsgImage = { image_url?: { url?: string } };
+type OrMsgImage = { image_url?: { url?: string }; url?: string; data?: string };
 
 function extractOpenRouterMessageImages(data: unknown): string[] {
   const d = data as {
-    choices?: { message?: { images?: Array<OrMsgImage & { url?: string; data?: string }>; content?: unknown } }[];
+    choices?: { message?: { images?: OrMsgImage[]; content?: unknown } }[];
   };
   const msg = d?.choices?.[0]?.message;
   const urls: string[] = [];
   if (Array.isArray(msg?.images)) {
     for (const im of msg.images) {
-      const u = im?.image_url?.url || (typeof (im as any)?.url === "string" ? (im as any).url : undefined);
+      const u = im?.image_url?.url || im?.url;
       if (typeof u === "string" && u) urls.push(u);
     }
   }
@@ -326,9 +335,13 @@ function extractOpenRouterMessageImages(data: unknown): string[] {
 
 async function generateOneOpenRouterImage(
   prompt: string,
+  ratio: ImageRatio,
   referenceDataUrls: string[] | undefined,
   signal?: AbortSignal,
 ): Promise<string[]> {
+  if (!appEnv.openrouter.imageModel) {
+    throw new Error("No OpenRouter image model configured.");
+  }
   const hasRefs = !!referenceDataUrls?.length;
   const safePrompt =
     hasRefs && !prompt.trim()
@@ -352,8 +365,10 @@ async function generateOneOpenRouterImage(
             : safePrompt,
         },
       ],
-      modalities: ["image", "text"],
-      max_tokens: 4096,
+      modalities: ["image"],
+      image_config: {
+        aspect_ratio: OPENROUTER_IMAGE_ASPECT_RATIO[ratio],
+      },
     }),
   });
 
@@ -372,7 +387,7 @@ async function generateOneOpenRouterImage(
     const maybeText = extractText(data);
     throw new Error([
       "OpenRouter returned no images.",
-      "Confirm the model supports `modalities: [image, text]` and your key has access.",
+      "Confirm the model supports `modalities: [image]` and your key has access.",
       maybeText ? `Response text: ${maybeText.slice(0, 220)}` : "",
     ].filter(Boolean).join(" "));
   }
@@ -390,7 +405,7 @@ async function generateOpenRouterImageBatch(
   const out: GeneratedImage[] = [];
   for (let i = 0; i < count; i++) {
     const baseSeed = (Date.now() + i * 9973) >>> 0;
-    const urls = await generateOneOpenRouterImage(finalPrompt, referenceDataUrls, signal);
+    const urls = await generateOneOpenRouterImage(finalPrompt, ratio, referenceDataUrls, signal);
     for (let j = 0; j < urls.length; j++) {
       out.push({
         url: urls[j],
@@ -444,10 +459,33 @@ export async function generateImage(opts: {
   const finalPrompt = buildImagePrompt(opts.prompt, style, ratio);
   const refs = opts.referenceDataUrls?.filter(Boolean);
 
-  if (isOpenRouterConfigured) {
-    return await generateOpenRouterImageBatch(finalPrompt, style, ratio, count, refs, opts.signal);
+  if (isOpenRouterConfigured && appEnv.openrouter.imageModel) {
+    try {
+      return await generateOpenRouterImageBatch(finalPrompt, style, ratio, count, refs, opts.signal);
+    } catch (error) {
+      console.warn("OpenRouter image generation failed, falling back to Pollinations.", error);
+      if (refs?.length) throw error;
+    }
   }
-  throw new Error("Configure VITE_OPENROUTER_API_KEY for image generation.");
+
+  if (!refs?.length) {
+    const out: GeneratedImage[] = [];
+    for (let i = 0; i < count; i++) {
+      const seed = (Date.now() + i * 9973) >>> 0;
+      const url = pollinationsUrl(finalPrompt, ratio, seed);
+      await prefetchImageUrl(url, opts.signal);
+      out.push({ url, prompt: finalPrompt, style, ratio, seed });
+    }
+    return out;
+  }
+
+  if (!isOpenRouterConfigured) {
+    throw new Error("Configure VITE_OPENROUTER_API_KEY for Supernova chat and an image model for image editing.");
+  }
+
+  throw new Error(
+    "Configure VITE_OPENROUTER_IMAGE_MODEL with an image-capable OpenRouter model to use reference-image editing in Supernova.",
+  );
 }
 
 export async function fileToDataUrl(file: File): Promise<string> {
