@@ -7,9 +7,7 @@ type RuntimeEnvKey =
   | "VITE_FIREBASE_APP_ID"
   | "VITE_FIREBASE_MEASUREMENT_ID"
   | "VITE_MISTRAL_API_KEY"
-  | "VITE_MISTRAL_IMAGE_API_KEY"
   | "VITE_MISTRAL_MODEL"
-  | "VITE_MISTRAL_IMAGE_MODEL"
   | "VITE_MISTRAL_API_BASE_URL";
 
 const readEnv = (key: RuntimeEnvKey, fallback = "") => {
@@ -29,9 +27,7 @@ export const appEnv = {
   },
   mistral: {
     apiKey: readEnv("VITE_MISTRAL_API_KEY"),
-    imageApiKey: readEnv("VITE_MISTRAL_IMAGE_API_KEY") || readEnv("VITE_MISTRAL_API_KEY"),
     model: readEnv("VITE_MISTRAL_MODEL", "codestral-2508"),
-    imageModel: readEnv("VITE_MISTRAL_IMAGE_MODEL", "mistral-image-latest"),
     apiBaseUrl: readEnv("VITE_MISTRAL_API_BASE_URL", "https://codestral.mistral.ai/v1"),
   },
 } as const;
