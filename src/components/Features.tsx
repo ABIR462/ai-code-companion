@@ -28,7 +28,7 @@ const FEATURES = [
   {
     icon: Image,
     title: "Real Image Integration",
-    desc: "AI-powered image generation in Supernova — text-to-image and image editing with OpenRouter image modalities.",
+    desc: "AI-powered image generation in Supernova using your Mistral image model and synced prompt history.",
     color: "text-orange-400",
     bg: "bg-orange-500/10 border-orange-500/20",
   },

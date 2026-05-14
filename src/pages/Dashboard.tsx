@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { completeWebsiteAI } from "@/lib/websiteAI";
+import { generateImage } from "@/lib/supernovaChat";
 import {
   Loader2, Plus, Trash2, Eye, Code2, Edit3, Download,
   Copy, Zap, LayoutDashboard, Search, X, Check,
@@ -126,18 +127,6 @@ function sanitizeEditorHTML(html: string) {
   } catch {
     return ensureHTML(html);
   }
-}
-
-function realisticImageUrl(prompt: string) {
-  const params = new URLSearchParams({
-    width: "1024",
-    height: "768",
-    seed: String(Date.now()),
-    model: "flux",
-    nologo: "true",
-    enhance: "true",
-  });
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(`${prompt}, realistic, professional photography, high detail, natural lighting`)}?${params.toString()}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -367,13 +356,14 @@ export default function Dashboard() {
     if (!imagePrompt.trim()) return;
     setImageBusy(true);
     try {
-      const src = realisticImageUrl(imagePrompt);
-      await new Promise<void>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error("Image model failed to render"));
-        img.src = src;
+      const images = await generateImage({
+        prompt: `${imagePrompt}, realistic, professional photography, high detail, natural lighting`,
+        style: "realistic",
+        ratio: "4:3",
+        count: 1,
       });
+      const src = images[0]?.url;
+      if (!src) throw new Error("Mistral returned no image");
       setLocalImages((prev) => [src, ...prev].slice(0, 16));
       setImagePrompt("");
       toast.success("Image generated");

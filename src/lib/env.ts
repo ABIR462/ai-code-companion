@@ -7,14 +7,10 @@ type RuntimeEnvKey =
   | "VITE_FIREBASE_APP_ID"
   | "VITE_FIREBASE_MEASUREMENT_ID"
   | "VITE_MISTRAL_API_KEY"
+  | "VITE_MISTRAL_IMAGE_API_KEY"
   | "VITE_MISTRAL_MODEL"
-  | "VITE_MISTRAL_API_BASE_URL"
-  | "VITE_OPENROUTER_API_KEY"
-  | "VITE_OPENROUTER_MODEL"
-  | "VITE_OPENROUTER_CHAT_MODEL"
-  | "VITE_OPENROUTER_IMAGE_MODEL"
-  | "VITE_OPENROUTER_API_BASE_URL"
-  | "VITE_SUPERNOVA_IMAGE_MODEL";
+  | "VITE_MISTRAL_IMAGE_MODEL"
+  | "VITE_MISTRAL_API_BASE_URL";
 
 const readEnv = (key: RuntimeEnvKey, fallback = "") => {
   const value = import.meta.env[key];
@@ -33,18 +29,10 @@ export const appEnv = {
   },
   mistral: {
     apiKey: readEnv("VITE_MISTRAL_API_KEY"),
+    imageApiKey: readEnv("VITE_MISTRAL_IMAGE_API_KEY") || readEnv("VITE_MISTRAL_API_KEY"),
     model: readEnv("VITE_MISTRAL_MODEL", "codestral-2508"),
+    imageModel: readEnv("VITE_MISTRAL_IMAGE_MODEL", "mistral-image-latest"),
     apiBaseUrl: readEnv("VITE_MISTRAL_API_BASE_URL", "https://codestral.mistral.ai/v1"),
-  },
-  openrouter: {
-    apiKey: readEnv("VITE_OPENROUTER_API_KEY"),
-    chatModel:
-      readEnv("VITE_OPENROUTER_MODEL") || readEnv("VITE_OPENROUTER_CHAT_MODEL", "nvidia/nemotron-3-super-120b-a12b:free"),
-    imageModel: readEnv("VITE_OPENROUTER_IMAGE_MODEL"),
-    apiBaseUrl: readEnv("VITE_OPENROUTER_API_BASE_URL", "https://openrouter.ai/api/v1"),
-  },
-  supernova: {
-    imageModel: readEnv("VITE_SUPERNOVA_IMAGE_MODEL", "flux"),
   },
 } as const;
 
@@ -63,5 +51,4 @@ export const mistralMissingEnvKeys = [["VITE_MISTRAL_API_KEY", appEnv.mistral.ap
 
 export const isFirebaseConfigured = firebaseMissingEnvKeys.length === 0;
 export const isMistralConfigured = mistralMissingEnvKeys.length === 0;
-export const isOpenRouterConfigured = !!appEnv.openrouter.apiKey;
-export const isSupernovaChatConfigured = isOpenRouterConfigured;
+export const isSupernovaChatConfigured = isMistralConfigured;
