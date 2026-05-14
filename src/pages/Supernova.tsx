@@ -29,6 +29,8 @@ const STYLES: { id: ImageStyle; label: string }[] = [
 
 const RATIOS: ImageRatio[] = ["1:1", "16:9", "9:16", "3:2", "2:3", "4:3"];
 
+const localId = () => `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 function titleFromPrompt(prompt: string) {
   const title = prompt.trim().replace(/\s+/g, " ").slice(0, 48);
   return title || "Untitled image";
@@ -52,15 +54,21 @@ export default function Supernova() {
   const [conversations, setConversations] = useState<SupernovaConversation[]>([]);
   const [activeId, setActiveId] = useState("");
   const [messages, setMessages] = useState<SupernovaMessage[]>([]);
+  const [localMessages, setLocalMessages] = useState<SupernovaMessage[]>([]);
   const [busy, setBusy] = useState(false);
 
   const canGenerate = useMemo(() => prompt.trim().length > 0 && !busy, [busy, prompt]);
   const activeTitle = conversations.find((c) => c.id === activeId)?.title ?? "New image chat";
+  const visibleMessages = useMemo(() => {
+    const seen = new Set(messages.map((message) => message.id).filter(Boolean));
+    return [...messages, ...localMessages.filter((message) => !message.id || !seen.has(message.id))];
+  }, [localMessages, messages]);
 
   useEffect(() => {
     if (!user) {
       setConversations([]);
       setActiveId("");
+      setMessages([]);
       return;
     }
     return subscribeConversations(user.uid, setConversations);
@@ -80,12 +88,20 @@ export default function Supernova() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, busy]);
+  }, [visibleMessages.length, busy]);
 
   const startChat = async () => {
     if (!user) return navigate("/auth");
-    const id = await createConversation(user.uid, "New image chat");
-    setActiveId(id);
+    try {
+      const id = await createConversation(user.uid, "New image chat");
+      setActiveId(id);
+      setLocalMessages([]);
+    } catch (error: any) {
+      console.error(error);
+      setActiveId("");
+      setLocalMessages([]);
+      toast.error("Realtime storage is unavailable. Starting a local chat.");
+    }
     setPrompt("");
   };
 
@@ -113,15 +129,28 @@ export default function Supernova() {
     setPrompt("");
 
     try {
-      const cid = activeId || (await createConversation(user.uid, titleFromPrompt(cleanPrompt)));
-      if (!activeId) setActiveId(cid);
-
-      await appendMessage(user.uid, cid, {
+      let cid = activeId;
+      const userMessage: SupernovaMessage = {
+        id: localId(),
         role: "user",
         kind: "text",
         content: cleanPrompt,
         prompt: cleanPrompt,
-      });
+      };
+      let canPersist = true;
+
+      try {
+        if (!cid) {
+          cid = await createConversation(user.uid, titleFromPrompt(cleanPrompt));
+          setActiveId(cid);
+        }
+        await appendMessage(user.uid, cid, userMessage);
+      } catch (storageError) {
+        canPersist = false;
+        console.error(storageError);
+        setLocalMessages((prev) => [...prev, userMessage]);
+        toast.error("Realtime chat storage failed. Generating locally.");
+      }
 
       const images = await generateImage({
         prompt: cleanPrompt,
@@ -131,13 +160,26 @@ export default function Supernova() {
         signal: controller.signal,
       });
 
-      await appendMessage(user.uid, cid, {
+      const assistantMessage: SupernovaMessage = {
+        id: localId(),
         role: "assistant",
         kind: "image",
         content: `Generated ${ratio} ${style === "auto" ? "image" : style} image`,
         images: images.map((image) => image.url),
         prompt: cleanPrompt,
-      });
+      };
+
+      if (canPersist && cid) {
+        try {
+          await appendMessage(user.uid, cid, assistantMessage);
+        } catch (storageError) {
+          console.error(storageError);
+          setLocalMessages((prev) => [...prev, userMessage, assistantMessage]);
+          toast.error("Image generated, but realtime storage failed.");
+        }
+      } else {
+        setLocalMessages((prev) => [...prev, assistantMessage]);
+      }
       toast.success("Image generated");
     } catch (error: any) {
       if (error?.name !== "AbortError") {
@@ -232,8 +274,8 @@ export default function Supernova() {
 
           <ScrollArea className="flex-1">
             <div className="space-y-5 p-4 sm:p-6">
-              {messages.length ? (
-                messages.map((message) => (
+              {visibleMessages.length ? (
+                visibleMessages.map((message) => (
                   <div key={message.id} className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}>
                     <div
                       className={cn(

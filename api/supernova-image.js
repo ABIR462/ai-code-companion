@@ -26,6 +26,7 @@ function getImageConfig() {
     process.env.MISTRAL_API_KEY ||
     process.env.VITE_MISTRAL_API_KEY;
   const imageModel = process.env.MISTRAL_IMAGE_MODEL || process.env.VITE_MISTRAL_IMAGE_MODEL || "mistral-image-latest";
+  const agentId = process.env.MISTRAL_IMAGE_AGENT_ID || process.env.VITE_MISTRAL_IMAGE_AGENT_ID || "";
   const agentModel =
     process.env.MISTRAL_IMAGE_AGENT_MODEL ||
     process.env.VITE_MISTRAL_IMAGE_AGENT_MODEL ||
@@ -38,7 +39,7 @@ function getImageConfig() {
     throw err;
   }
 
-  return { apiKey, imageModel, agentModel };
+  return { apiKey, imageModel, agentId, agentModel };
 }
 
 function jsonHeaders(apiKey) {
@@ -161,8 +162,8 @@ async function createImageAgent({ apiKey, agentModel, imageModel, signal }) {
   return data.id;
 }
 
-async function generateWithAgent({ apiKey, agentModel, imageModel, prompt, count, signal }) {
-  const agentId = await createImageAgent({ apiKey, agentModel, imageModel, signal });
+async function generateWithAgent({ apiKey, agentId: configuredAgentId, agentModel, imageModel, prompt, count, signal }) {
+  const agentId = configuredAgentId || (await createImageAgent({ apiKey, agentModel, imageModel, signal }));
   const response = await fetch(`${MISTRAL_API_BASE_URL}/conversations`, {
     method: "POST",
     headers: jsonHeaders(apiKey),
@@ -180,7 +181,7 @@ async function generateWithAgent({ apiKey, agentModel, imageModel, prompt, count
   return readMistralResponse(response, count);
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Method not allowed" });
