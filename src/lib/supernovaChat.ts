@@ -1,6 +1,7 @@
 import { appEnv, isOpenRouterConfigured } from "@/lib/env";
 
 const OPENROUTER_CHAT_URL = `${appEnv.openrouter.apiBaseUrl.replace(/\/$/, "")}/chat/completions`;
+const MISTRAL_IMAGE_URL = "https://api.mistral.ai/v1/image/generate";
 
 function openRouterHeaders(): Record<string, string> {
   if (!isOpenRouterConfigured) {
@@ -269,16 +270,28 @@ const OPENROUTER_IMAGE_ASPECT_RATIO: Record<ImageRatio, string> = {
 
 const STYLE_HINTS: Record<ImageStyle, string> = {
   auto: "",
-  realistic: "ultra realistic photography, sharp focus, natural lighting, 8k detail",
-  anime: "anime illustration, cel shaded, vibrant colors, cinematic composition",
-  illustration: "modern editorial illustration, clean shapes, harmonious palette",
-  "3d": "premium 3d render, soft global illumination, glossy detailed materials",
-  pixel: "pixel art, crisp edges, limited palette, retro game style",
-  logo: "minimal vector logo, centered on solid white background, clean geometry",
-  sketch: "hand-drawn pencil sketch, expressive shading, paper texture",
-  watercolor: "watercolor painting, soft washes, paper grain, expressive brushwork",
-  cyberpunk: "cyberpunk, neon lights, rain reflections, futuristic city mood",
+  realistic:
+    "ultra realistic photography, professional color grading, lifelike skin and materials, sharp focal plane, natural light, premium lens rendering",
+  anime: "anime key visual, polished cel shading, expressive faces, dynamic framing, vibrant palette, cinematic lighting",
+  illustration: "editorial illustration, clean silhouette language, refined composition, high contrast focal hierarchy, tasteful palette",
+  "3d": "premium 3d render, cinematic global illumination, believable reflections, detailed materials, polished studio lighting",
+  pixel: "high-end pixel art, crisp edges, readable clusters, intentional palette control, game-ready composition",
+  logo: "minimal vector identity mark, clean geometry, balanced negative space, brand-ready, no mockup scene",
+  sketch: "hand-drawn graphite sketch, confident linework, expressive shading, subtle paper texture",
+  watercolor: "watercolor illustration, layered washes, pigment bloom, textured paper, elegant brush rhythm",
+  cyberpunk: "cyberpunk atmosphere, neon reflections, dense city mood, volumetric haze, futuristic cinematic lighting",
 };
+
+const STYLE_QUALITY_SUFFIX: Partial<Record<ImageStyle, string>> = {
+  realistic: "85mm lens look, realistic depth of field, subtle filmic contrast",
+  anime: "clean line art, anatomy consistency, polished background rendering",
+  illustration: "publication-ready detail, elegant shape language",
+  "3d": "octane-quality finish, premium product-shot clarity",
+  logo: "flat background, centered composition, no bevels unless requested, no extra words",
+};
+
+const NEGATIVE_HINT =
+  "no watermark, no signature, no extra text, no duplicated subjects, no deformed anatomy, no muddy details";
 
 export type GeneratedImage = {
   url: string;
@@ -291,7 +304,8 @@ export type GeneratedImage = {
 export function buildImagePrompt(prompt: string, style: ImageStyle, ratio: ImageRatio = "1:1") {
   const hint = STYLE_HINTS[style];
   const ratioHint = `aspect ratio ${ratio}`;
-  return [prompt, hint, ratioHint, "high quality, detailed, no text artifacts unless requested"]
+  const qualityHint = STYLE_QUALITY_SUFFIX[style] ?? "strong composition, high detail, crisp subject separation";
+  return [prompt.trim(), hint, qualityHint, ratioHint, NEGATIVE_HINT]
     .filter(Boolean)
     .join(", ");
 }
@@ -305,6 +319,7 @@ export function pollinationsUrl(prompt: string, ratio: ImageRatio, seed: number,
     model,
     nologo: "true",
     enhance: "true",
+    safe: "true",
   });
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${params.toString()}`;
 }
@@ -472,7 +487,7 @@ export async function generateImage(opts: {
     const out: GeneratedImage[] = [];
     for (let i = 0; i < count; i++) {
       const seed = (Date.now() + i * 9973) >>> 0;
-      const url = pollinationsUrl(finalPrompt, ratio, seed);
+      const url = pollinationsUrl(finalPrompt, ratio, seed, appEnv.supernova.imageModel);
       await prefetchImageUrl(url, opts.signal);
       out.push({ url, prompt: finalPrompt, style, ratio, seed });
     }
@@ -480,7 +495,7 @@ export async function generateImage(opts: {
   }
 
   if (!isOpenRouterConfigured) {
-    throw new Error("Configure VITE_OPENROUTER_API_KEY for Supernova chat and an image model for image editing.");
+    throw new Error("Reference-image editing still requires VITE_OPENROUTER_API_KEY plus an image-capable VITE_OPENROUTER_IMAGE_MODEL.");
   }
 
   throw new Error(
@@ -510,3 +525,42 @@ export function detectImageIntent(text: string): { isImage: boolean; prompt: str
   }
   return { isImage: false, prompt: t };
 }
+
+async function generateImage({
+  prompt,
+  style,
+  ratio,
+  count,
+  signal,
+}: {
+  prompt: string;
+  style: string;
+  ratio: string;
+  count: number;
+  signal?: AbortSignal;
+}): Promise<{ url: string }[]> {
+  const response = await fetch(MISTRAL_IMAGE_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${appEnv.mistral.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: appEnv.mistral.imageModel,
+      prompt,
+      style,
+      ratio,
+      count,
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Mistral API error: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.images;
+}
+
+export { generateImage };

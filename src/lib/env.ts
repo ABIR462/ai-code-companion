@@ -13,7 +13,8 @@ type RuntimeEnvKey =
   | "VITE_OPENROUTER_MODEL"
   | "VITE_OPENROUTER_CHAT_MODEL"
   | "VITE_OPENROUTER_IMAGE_MODEL"
-  | "VITE_OPENROUTER_API_BASE_URL";
+  | "VITE_OPENROUTER_API_BASE_URL"
+  | "VITE_SUPERNOVA_IMAGE_MODEL";
 
 const readEnv = (key: RuntimeEnvKey, fallback = "") => {
   const value = import.meta.env[key];
@@ -41,6 +42,9 @@ export const appEnv = {
       readEnv("VITE_OPENROUTER_MODEL") || readEnv("VITE_OPENROUTER_CHAT_MODEL", "nvidia/nemotron-3-super-120b-a12b:free"),
     imageModel: readEnv("VITE_OPENROUTER_IMAGE_MODEL"),
     apiBaseUrl: readEnv("VITE_OPENROUTER_API_BASE_URL", "https://openrouter.ai/api/v1"),
+  },
+  supernova: {
+    imageModel: readEnv("VITE_SUPERNOVA_IMAGE_MODEL", "flux"),
   },
 } as const;
 

@@ -21,6 +21,7 @@ interface ImportMetaEnv {
   readonly VITE_OPENROUTER_CHAT_MODEL: string;
   readonly VITE_OPENROUTER_IMAGE_MODEL: string;
   readonly VITE_OPENROUTER_API_BASE_URL: string;
+  readonly VITE_SUPERNOVA_IMAGE_MODEL: string;
 }
 
 interface ImportMeta {
