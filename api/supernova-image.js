@@ -1,13 +1,23 @@
 const MISTRAL_API_BASE_URL = "https://api.mistral.ai/v1";
 
-const RATIO_DIMS = {
-  "1:1": { width: 1024, height: 1024 },
-  "16:9": { width: 1280, height: 720 },
-  "9:16": { width: 720, height: 1280 },
-  "3:2": { width: 1200, height: 800 },
-  "2:3": { width: 800, height: 1200 },
-  "4:3": { width: 1200, height: 900 },
-};
+const ALLOWED_RATIOS = new Set(["1:1", "16:9", "9:16", "3:2", "2:3", "4:3"]);
+const REQUEST_TIMEOUT_MS = 55_000;
+
+function withTimeout(signalLabel, task) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  return Promise.resolve()
+    .then(() => task(controller.signal))
+    .catch((error) => {
+      if (error && error.name === "AbortError") {
+        const err = new Error(`${signalLabel} timed out after ${Math.round(REQUEST_TIMEOUT_MS / 1000)}s`);
+        err.status = 504;
+        throw err;
+      }
+      throw error;
+    })
+    .finally(() => clearTimeout(timer));
+}
 
 function getImageConfig() {
   const apiKey =
@@ -16,10 +26,14 @@ function getImageConfig() {
     process.env.MISTRAL_API_KEY ||
     process.env.VITE_MISTRAL_API_KEY;
   const imageModel = process.env.MISTRAL_IMAGE_MODEL || process.env.VITE_MISTRAL_IMAGE_MODEL || "mistral-image-latest";
-  const agentModel = process.env.MISTRAL_IMAGE_AGENT_MODEL || process.env.VITE_MISTRAL_IMAGE_AGENT_MODEL || "mistral-medium-latest";
+  const agentModel =
+    process.env.MISTRAL_IMAGE_AGENT_MODEL ||
+    process.env.VITE_MISTRAL_IMAGE_AGENT_MODEL ||
+    process.env.MISTRAL_AGENT_MODEL ||
+    "mistral-medium-latest";
 
   if (!apiKey) {
-    const err = new Error("Missing Mistral image API key. Set MISTRAL_IMAGE_API_KEY or VITE_MISTRAL_IMAGE_API_KEY.");
+    const err = new Error("Missing Mistral image API key. Set MISTRAL_IMAGE_API_KEY in Vercel Environment Variables.");
     err.status = 500;
     throw err;
   }
@@ -32,10 +46,6 @@ function jsonHeaders(apiKey) {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
   };
-}
-
-function fileHeaders(apiKey) {
-  return { Authorization: `Bearer ${apiKey}` };
 }
 
 function toDataUrl(buffer, contentType = "image/png") {
@@ -61,7 +71,12 @@ function collectImages(value, urls = new Set()) {
   }
   if (typeof value !== "object") return urls;
 
-  const direct = value.url || value.image_url || value.b64_json || value.base64 || value.image;
+  const direct =
+    value.url ||
+    (value.image_url && typeof value.image_url === "object" ? value.image_url.url : value.image_url) ||
+    value.b64_json ||
+    value.base64 ||
+    value.image;
   if (typeof direct === "string") {
     const url = asImageUrl(direct, value.mime_type || value.mime || "image/png");
     if (url) urls.add(url);
@@ -91,7 +106,11 @@ function collectFileIds(value, ids = new Set()) {
   return ids;
 }
 
-async function readMistralResponse(response, apiKey, count) {
+function fileIdToImageUrl(fileId) {
+  return `/api/supernova-file?fileId=${encodeURIComponent(fileId)}`;
+}
+
+async function readMistralResponse(response, count) {
   const contentType = response.headers.get("content-type") || "";
 
   if (contentType.startsWith("image/") || contentType === "application/octet-stream") {
@@ -110,72 +129,21 @@ async function readMistralResponse(response, apiKey, count) {
   const urls = [...collectImages(data)];
   for (const fileId of collectFileIds(data)) {
     if (urls.length >= count) break;
-    urls.push(...(await downloadMistralFile(fileId, apiKey)));
+    urls.push(fileIdToImageUrl(fileId));
   }
   return [...new Set(urls)].slice(0, count);
 }
 
-async function downloadMistralFile(fileId, apiKey) {
-  const endpoints = [
-    `${MISTRAL_API_BASE_URL}/files/${encodeURIComponent(fileId)}/content`,
-    `${MISTRAL_API_BASE_URL}/files/${encodeURIComponent(fileId)}/download`,
-  ];
-
-  let lastError = "";
-  for (const endpoint of endpoints) {
-    const response = await fetch(endpoint, { method: "GET", headers: fileHeaders(apiKey) });
-    const contentType = response.headers.get("content-type") || "";
-
-    if (!response.ok) {
-      lastError = `${response.status} ${(await response.text().catch(() => response.statusText)).slice(0, 180)}`;
-      continue;
-    }
-
-    if (contentType.startsWith("image/") || contentType === "application/octet-stream") {
-      return [toDataUrl(await response.arrayBuffer(), contentType || "image/png")];
-    }
-
-    return readMistralResponse(response, apiKey, 1);
-  }
-
-  throw new Error(`Could not download generated Mistral file ${fileId}: ${lastError}`);
-}
-
-async function generateDirect({ apiKey, imageModel, prompt, ratio, count }) {
-  const dims = RATIO_DIMS[ratio] || RATIO_DIMS["1:1"];
-  const response = await fetch(`${MISTRAL_API_BASE_URL}/image/generate`, {
-    method: "POST",
-    headers: jsonHeaders(apiKey),
-    body: JSON.stringify({
-      model: imageModel,
-      prompt,
-      n: count,
-      count,
-      width: dims.width,
-      height: dims.height,
-      response_format: "url",
-    }),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    const err = new Error(`Direct image endpoint ${response.status}: ${detail.slice(0, 240) || response.statusText}`);
-    err.status = response.status;
-    throw err;
-  }
-
-  return readMistralResponse(response, apiKey, count);
-}
-
-async function createImageAgent({ apiKey, agentModel }) {
+async function createImageAgent({ apiKey, agentModel, imageModel, signal }) {
   const response = await fetch(`${MISTRAL_API_BASE_URL}/agents`, {
     method: "POST",
     headers: jsonHeaders(apiKey),
+    signal,
     body: JSON.stringify({
       model: agentModel,
       name: "Supernova Image Agent",
       description: "Generates images for Supernova.",
-      instructions: "Use the image_generation tool whenever the user asks for an image.",
+      instructions: `Use the image_generation tool whenever the user asks for an image. Preferred image model label from configuration: ${imageModel}.`,
       tools: [{ type: "image_generation" }],
       completion_args: { temperature: 0.3, top_p: 0.95 },
     }),
@@ -193,11 +161,12 @@ async function createImageAgent({ apiKey, agentModel }) {
   return data.id;
 }
 
-async function generateWithAgent({ apiKey, agentModel, prompt, count }) {
-  const agentId = await createImageAgent({ apiKey, agentModel });
+async function generateWithAgent({ apiKey, agentModel, imageModel, prompt, count, signal }) {
+  const agentId = await createImageAgent({ apiKey, agentModel, imageModel, signal });
   const response = await fetch(`${MISTRAL_API_BASE_URL}/conversations`, {
     method: "POST",
     headers: jsonHeaders(apiKey),
+    signal,
     body: JSON.stringify({ agent_id: agentId, inputs: prompt }),
   });
 
@@ -208,7 +177,7 @@ async function generateWithAgent({ apiKey, agentModel, prompt, count }) {
     throw err;
   }
 
-  return readMistralResponse(response, apiKey, count);
+  return readMistralResponse(response, count);
 }
 
 module.exports = async function handler(req, res) {
@@ -221,24 +190,19 @@ module.exports = async function handler(req, res) {
     const config = getImageConfig();
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
     const prompt = String(body.prompt || "").trim();
-    const ratio = RATIO_DIMS[body.ratio] ? body.ratio : "1:1";
+    const ratio = ALLOWED_RATIOS.has(body.ratio) ? body.ratio : "1:1";
     const count = Math.min(Math.max(Number(body.count) || 1, 1), 4);
 
     if (!prompt) return res.status(400).json({ error: "Prompt is required" });
 
-    let urls = [];
-    let directError = null;
-    try {
-      urls = await generateDirect({ ...config, prompt, ratio, count });
-    } catch (error) {
-      directError = error;
-      urls = await generateWithAgent({ ...config, prompt, count });
-    }
+    const promptWithRatio = `${prompt}\n\nRequired aspect ratio: ${ratio}.`;
+    const urls = await withTimeout("Mistral image generation", (signal) => {
+      return generateWithAgent({ ...config, prompt: promptWithRatio, count, signal });
+    });
 
     if (!urls.length) {
       return res.status(502).json({
         error: "Mistral returned no generated image.",
-        detail: directError ? directError.message : undefined,
       });
     }
 

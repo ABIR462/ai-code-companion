@@ -1,5 +1,14 @@
 {
+  "functions": {
+    "api/supernova-image.js": {
+      "maxDuration": 60
+    },
+    "api/supernova-file.js": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
-    { "source": "/((?!api/.*).*)", "destination": "/index.html" }
+    { "source": "/api/:path*", "destination": "/api/:path*" },
+    { "source": "/:path*", "destination": "/index.html" }
   ]
 }

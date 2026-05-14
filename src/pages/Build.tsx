@@ -52,13 +52,14 @@ CORE ARCHITECTURAL PRINCIPLES:
 - UTILITY: Use Tailwind CSS via CDN: <script src="https://cdn.tailwindcss.com"></script>
 - ASSETS: You MUST include multiple high-quality, relevant thematic images unless the user explicitly wants a text-only page. Use stable direct image URLs such as Unsplash (https://images.unsplash.com/photo-...) with descriptive image choices that match the business context.
 - AESTHETICS: Create premium UI/UX with intentional art direction. Avoid generic templates. Use strong typography, layered surfaces, visual rhythm, contrast, and a clear brand feel.
-- RESPONSIVENESS: Pixel-perfect fluid layouts across all breakpoints.
+- RESPONSIVENESS: Mobile-first, pixel-perfect fluid layouts across all breakpoints. The page must work at 360px, 768px, and desktop widths with no horizontal scrolling, clipped text, or overlapping UI.
+- MOBILE UX: Include an ergonomic mobile navigation pattern when navigation exists, stack dense sections cleanly, use tap-friendly controls, and make forms, galleries, pricing tables, and cards readable on phones.
 - INTERACTIVITY: Use vanilla JavaScript for high-performance interactive states, progressive disclosure, tabs, filters, reveal-on-scroll, sliders, or hover states where appropriate.
 - SEMANTICS: Valid HTML5 structure for optimal SEO and accessibility.
 - UX: Build complete user journeys, not just isolated sections. Include clear navigation, compelling hero, proof or credibility, rich content sections, strong calls to action, and a polished footer.
 - CONTENT: Write convincing product-quality copy tailored to the user's prompt. Do not leave placeholder lorem ipsum.
 - IMAGERY: Prefer at least 3 distinct images across hero, gallery, product, testimonial, editorial, or feature areas when the concept supports it.
-- EXECUTION: Think through layout, spacing, mobile behavior, and interaction before writing code. The final file must be immediately usable in a browser.
+- EXECUTION: Think through layout, spacing, mobile behavior, and interaction before writing code. Validate mentally against mobile, tablet, and desktop. The final file must be immediately usable in a browser.
 
 OPTIONAL ENHANCEMENTS WHEN RELEVANT:
 - Add subtle gradients, mesh backgrounds, patterns, or editorial framing devices instead of flat empty backgrounds.

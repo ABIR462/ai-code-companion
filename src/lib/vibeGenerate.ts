@@ -12,8 +12,8 @@ export async function generateSite(opts: {
   onPhase("thinking");
 
   const system = previousCode
-    ? "You are a principal web engineer and product designer. Update the user's existing site based on their new instruction. Preserve working functionality, improve UX where useful, and return ONLY the full updated single-file HTML with inline CSS and JavaScript."
-    : "You are a principal web engineer and product designer. Generate a complete premium single-file HTML website with inline CSS and JavaScript. Prioritize strong visual hierarchy, polished responsive UI, multiple relevant real image sections, accessible semantics, thoughtful interactions, and conversion-focused UX. Return ONLY the HTML.";
+    ? "You are a principal web engineer and product designer. Update the user's existing site based on their new instruction. Preserve working functionality, improve UX where useful, and make the layout mobile-first with no horizontal overflow at 360px, 768px, and desktop widths. Return ONLY the full updated single-file HTML with inline CSS and JavaScript."
+    : "You are a principal web engineer and product designer. Generate a complete premium single-file HTML website with inline CSS and JavaScript. Prioritize strong visual hierarchy, polished mobile-first responsive UI, real image sections, accessible semantics, thoughtful interactions, tap-friendly mobile navigation, and conversion-focused UX. Return ONLY the HTML.";
 
   const messages = [
     { role: "system" as const, content: system },

@@ -5,6 +5,7 @@ import path from "path";
 
 const require = createRequire(import.meta.url);
 const supernovaImageHandler = require("./api/supernova-image.js");
+const supernovaFileHandler = require("./api/supernova-file.js");
 
 function readRequestBody(req: any) {
   return new Promise<string>((resolve, reject) => {
@@ -57,6 +58,33 @@ export default defineConfig(({ mode }) => {
               res.statusCode = 500;
               res.setHeader("Content-Type", "application/json");
               res.end(JSON.stringify({ error: error?.message ?? "Supernova dev API failed" }));
+            }
+          });
+          server.middlewares.use("/api/supernova-file", async (req: any, res: any) => {
+            try {
+              const response = {
+                statusCode: 200,
+                setHeader: (key: string, value: string) => res.setHeader(key, value),
+                status(code: number) {
+                  this.statusCode = code;
+                  return this;
+                },
+                json(payload: unknown) {
+                  res.statusCode = this.statusCode;
+                  res.setHeader("Content-Type", "application/json");
+                  res.end(JSON.stringify(payload));
+                },
+                end(payload: unknown) {
+                  res.statusCode = this.statusCode;
+                  res.end(payload);
+                },
+              };
+
+              await supernovaFileHandler(req, response);
+            } catch (error: any) {
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: error?.message ?? "Supernova file API failed" }));
             }
           });
         },
