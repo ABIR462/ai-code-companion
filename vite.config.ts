@@ -1,10 +1,6 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
-// @ts-ignore - Vercel API handlers are plain JS modules used by the dev middleware.
-import supernovaImageHandler from "./api/supernova-image.js";
-// @ts-ignore - Vercel API handlers are plain JS modules used by the dev middleware.
-import supernovaFileHandler from "./api/supernova-file.js";
 
 function readRequestBody(req: any) {
   return new Promise<string>((resolve, reject) => {

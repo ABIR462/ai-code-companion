@@ -11,7 +11,6 @@ import Index from "./pages/Index.tsx";
 import AuthPage from "./pages/Auth.tsx";
 import Build from "./pages/Build.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
-import Supernova from "./pages/Supernova.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -50,14 +49,6 @@ const App = () => {
                 element={
                   <ProtectedRoute>
                     <Dashboard />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/supernova"
-                element={
-                  <ProtectedRoute>
-                    <Supernova />
                   </ProtectedRoute>
                 }
               />
