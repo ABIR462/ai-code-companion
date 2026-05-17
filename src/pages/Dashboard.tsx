@@ -17,15 +17,41 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { completeWebsiteAI } from "@/lib/websiteAI";
-import { generateImage } from "@/lib/supernovaChat";
+
 import {
-  Loader2, Plus, Trash2, Eye, Code2, Edit3, Download,
-  Copy, Zap, LayoutDashboard, Search, X, Check,
-  Smartphone, Monitor, Tablet, RefreshCw,
-  Image as ImageIcon, ShoppingBag, Type, Palette, MousePointer2, Upload, Wand2,
+  Loader2,
+  Plus,
+  Trash2,
+  Eye,
+  Code2,
+  Edit3,
+  Download,
+  Copy,
+  Zap,
+  LayoutDashboard,
+  Search,
+  X,
+  Check,
+  Smartphone,
+  Monitor,
+  Tablet,
+  RefreshCw,
+  Image as ImageIcon,
+  ShoppingBag,
+  Type,
+  Palette,
+  Upload,
+  Wand2,
   Save,
+  Wand2 as Wand2Icon,
+  MousePointer2,
 } from "lucide-react";
-import { ensureProfile, subscribeProfile, updateProfile as saveProfile, Profile } from "@/lib/profiles";
+import {
+  ensureProfile,
+  subscribeProfile,
+  updateProfile as saveProfile,
+  Profile,
+} from "@/lib/profiles";
 import {
   Dialog,
   DialogContent,
@@ -34,9 +60,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-/* ------------------------------------------------------------------ */
-/*  Types                                                               */
-/* ------------------------------------------------------------------ */
 type Gen = {
   id: string;
   title: string | null;
@@ -44,34 +67,31 @@ type Gen = {
   html: string;
   created_at: string;
 };
+
 type Device = "desktop" | "tablet" | "mobile";
 
-/* ------------------------------------------------------------------ */
-/*  Image categories                                                    */
-/* ------------------------------------------------------------------ */
+type DeviceSize = Record<Device, string>;
+
 const IMG_CATS = [
-  { label: "Nature",       q: "nature"       },
-  { label: "Business",     q: "business"     },
-  { label: "Tech",         q: "technology"   },
-  { label: "Food",         q: "food"         },
-  { label: "Fashion",      q: "fashion"      },
+  { label: "Nature", q: "nature" },
+  { label: "Business", q: "business" },
+  { label: "Tech", q: "technology" },
+  { label: "Food", q: "food" },
+  { label: "Fashion", q: "fashion" },
   { label: "Architecture", q: "architecture" },
-  { label: "People",       q: "people"       },
-  { label: "Products",     q: "product"      },
+  { label: "People", q: "people" },
+  { label: "Products", q: "product" },
 ];
 
-/* ------------------------------------------------------------------ */
-/*  Inject click-to-edit script into iframe HTML                       */
-/* ------------------------------------------------------------------ */
 function injectEditor(html: string): string {
   const script = [
     "<scr" + "ipt>",
     "(function(){",
     "var st=document.createElement('style');",
-    "st.textContent='[data-me]:hover{outline:2px solid #3b82f6!important;cursor:text!important}",
+    "st.textContent='[data-me]:hover{outline:2px solid #3b82f6!important;cursor:text!important}'",
     "[data-me]:focus{outline:2px solid #8b5cf6!important;background:rgba(139,92,246,.05)!important}';",
     "document.head.appendChild(st);",
-    "document.querySelectorAll('h1,h2,h3,h4,h5,h6,p,span,a,li,button,label').forEach(function(el){",
+    "document.querySelectorAll('h1,h2,h3,h4,h5,h6,p,span,a,li,button,label,input,textarea,select,option').forEach(function(el){",
     "  el.setAttribute('contenteditable','true');",
     "  el.setAttribute('data-me','1');",
     "  el.addEventListener('blur',function(){window.parent.postMessage({type:'matrix-html-change',html:'<!DOCTYPE html>'+document.documentElement.outerHTML},'*');});",
@@ -89,21 +109,12 @@ function injectEditor(html: string): string {
   return html.replace("</body>", script + "</body>");
 }
 
-async function fileToImageDataUrl(file: File, maxSize = 1200, quality = 0.82) {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Image processing unavailable");
-  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
-  return canvas.toDataURL("image/jpeg", quality);
-}
-
 function cleanHTML(html: string) {
-  return html.replace(/^```html\s*/i, "").replace(/^```\s*/, "").replace(/\s*```$/, "").trim();
+  return html
+    .replace(/^```html\s*/i, "")
+    .replace(/^```\s*/, "")
+    .replace(/\s*```$/, "")
+    .trim();
 }
 
 function ensureHTML(html: string) {
@@ -129,37 +140,52 @@ function sanitizeEditorHTML(html: string) {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/*  Component                                                           */
-/* ------------------------------------------------------------------ */
+async function fileToImageDataUrl(file: File, maxSize = 1200, quality = 0.82) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Image processing unavailable");
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return canvas.toDataURL("image/jpeg", quality);
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const [items,          setItems]          = useState<Gen[]>([]);
-  const [loading,        setLoading]        = useState(true);
-  const [search,         setSearch]         = useState("");
-  const [active,         setActive]         = useState<Gen | null>(null);
-  const [tab,            setTab]            = useState<"preview" | "code">("preview");
-  const [device,         setDevice]         = useState<Device>("desktop");
-  const [editMode,       setEditMode]       = useState(false);
-  const [editedHtml,     setEditedHtml]     = useState("");
-  const [imgPanel,       setImgPanel]       = useState(false);
-  const [imgSearch,      setImgSearch]      = useState("");
-  const [imgResults,     setImgResults]     = useState<string[]>([]);
+  const [items, setItems] = useState<Gen[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+
+  const [active, setActive] = useState<Gen | null>(null);
+  const [tab, setTab] = useState<"preview" | "code">("preview");
+  const [device, setDevice] = useState<Device>("desktop");
+  const [editMode, setEditMode] = useState(false);
+  const [editedHtml, setEditedHtml] = useState("");
+
+  const [imgPanel, setImgPanel] = useState(false);
+  const [imgSearch, setImgSearch] = useState("");
+  const [imgResults, setImgResults] = useState<string[]>([]);
   const [selectedImgSrc, setSelectedImgSrc] = useState<string | null>(null);
-  const [regenLoading,   setRegenLoading]   = useState(false);
-  const [localImages,     setLocalImages]    = useState<string[]>([]);
-  const [imagePrompt,     setImagePrompt]    = useState("");
-  const [imageBusy,       setImageBusy]      = useState(false);
-  const [profile,         setProfile]        = useState<Profile | null>(null);
-  const [bioDraft,        setBioDraft]       = useState("");
-  const [statusDraft,     setStatusDraft]    = useState("");
-  const [nameDraft,       setNameDraft]      = useState("");
-  const [savingProfile,   setSavingProfile]  = useState(false);
+
+  const [regenLoading, setRegenLoading] = useState(false);
+
+  const [localImages, setLocalImages] = useState<string[]>([]);
+  const [imagePrompt, setImagePrompt] = useState("");
+  const [imageBusy, setImageBusy] = useState(false);
+
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [bioDraft, setBioDraft] = useState("");
+  const [statusDraft, setStatusDraft] = useState("");
+  const [nameDraft, setNameDraft] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  /* ── Profile sync ── */
   useEffect(() => {
     if (!user) return;
     ensureProfile({
@@ -168,6 +194,7 @@ export default function Dashboard() {
       email: user.email,
       photoURL: user.photoURL,
     }).catch(() => {});
+
     const unsub = subscribeProfile(user.uid, (p) => {
       setProfile(p);
       if (p) {
@@ -176,6 +203,7 @@ export default function Dashboard() {
         setNameDraft(p.displayName ?? "");
       }
     });
+
     return unsub;
   }, [user]);
 
@@ -196,7 +224,6 @@ export default function Dashboard() {
     }
   };
 
-  /* ── Realtime Firestore listener ── */
   useEffect(() => {
     if (!user) {
       setItems([]);
@@ -204,13 +231,9 @@ export default function Dashboard() {
       return;
     }
     setLoading(true);
-    // NOTE: We deliberately omit `orderBy` so Firestore doesn't require a
-    // composite index (where + orderBy). We sort client-side instead — this
-    // keeps the dashboard working out-of-the-box without manual index setup.
-    const q = query(
-      collection(db, "generations"),
-      where("user_id", "==", user.uid),
-    );
+
+    const q = query(collection(db, "generations"), where("user_id", "==", user.uid));
+
     const unsub = onSnapshot(
       q,
       (snap) => {
@@ -218,7 +241,6 @@ export default function Dashboard() {
           id: d.id,
           ...(d.data() as Omit<Gen, "id">),
         }));
-        // Newest first
         docs.sort((a, b) => {
           const ta = new Date(a.created_at || 0).getTime();
           const tb = new Date(b.created_at || 0).getTime();
@@ -237,10 +259,10 @@ export default function Dashboard() {
         setLoading(false);
       }
     );
+
     return unsub;
   }, [user]);
 
-  /* ── Listen for iframe postMessage (image click) ── */
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (e.data?.type === "matrix-img-click") {
@@ -254,7 +276,6 @@ export default function Dashboard() {
     return () => window.removeEventListener("message", handler);
   }, []);
 
-  /* ── Open item in editor ── */
   const openItem = (g: Gen) => {
     setActive(g);
     setEditedHtml(g.html);
@@ -263,7 +284,6 @@ export default function Dashboard() {
     setDevice("desktop");
   };
 
-  /* ── Delete ── */
   const remove = async (id: string) => {
     try {
       await deleteDoc(doc(db, "generations", id));
@@ -274,15 +294,15 @@ export default function Dashboard() {
     }
   };
 
-  /* ── Save edits back to Firestore ── */
   const saveEdits = async () => {
     if (!active) return;
     const iframe = iframeRef.current;
     const liveHtml = sanitizeEditorHTML(
       iframe?.contentDocument?.documentElement?.outerHTML
         ? "<!DOCTYPE html>" + iframe.contentDocument.documentElement.outerHTML
-        : editedHtml,
+        : editedHtml
     );
+
     try {
       await updateDoc(doc(db, "generations", active.id), { html: liveHtml });
       setActive((prev) => (prev ? { ...prev, html: liveHtml } : null));
@@ -294,24 +314,21 @@ export default function Dashboard() {
     }
   };
 
-  /* ── Download ── */
   const dlFile = (html: string, name = "matrix") => {
     const blob = new Blob([html], { type: "text/html" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
     a.href = url;
     a.download = name + ".html";
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  /* ── Copy to clipboard ── */
   const copyText = async (text: string) => {
     await navigator.clipboard.writeText(text);
     toast.success("Copied");
   };
 
-  /* ── Image search (Picsum — no API key needed) ── */
   const searchImages = useCallback((q: string) => {
     const term = q.trim() || "abstract";
     setImgResults(
@@ -325,18 +342,19 @@ export default function Dashboard() {
     searchImages(imgSearch || "website");
   }, [imgSearch, searchImages]);
 
-  /* ── Replace image in active HTML (simple string split/join) ── */
   const replaceImage = async (newSrc: string) => {
     if (!active || !selectedImgSrc) return;
     const updated = editedHtml.split(selectedImgSrc).join(newSrc);
     setEditedHtml(updated);
     setActive((prev) => (prev ? { ...prev, html: updated } : null));
+
     try {
       await updateDoc(doc(db, "generations", active.id), { html: updated });
       toast.success("Image replaced");
     } catch {
-      /* silent */
+      // silent
     }
+
     setImgPanel(false);
     setSelectedImgSrc(null);
   };
@@ -344,7 +362,11 @@ export default function Dashboard() {
   const uploadImages = async (files: FileList | null) => {
     if (!files?.length) return;
     try {
-      const images = await Promise.all(Array.from(files).filter((file) => file.type.startsWith("image/")).map((file) => fileToImageDataUrl(file)));
+      const images = await Promise.all(
+        Array.from(files)
+          .filter((file) => file.type.startsWith("image/"))
+          .map((file) => fileToImageDataUrl(file))
+      );
       setLocalImages((prev) => [...images, ...prev].slice(0, 16));
       toast.success(`${images.length} image${images.length === 1 ? "" : "s"} added`);
     } catch (error: any) {
@@ -352,48 +374,40 @@ export default function Dashboard() {
     }
   };
 
+  // Removed Supernova integration. Instead, always redirect users to the external Supernova site.
   const generateImageAsset = async () => {
-    if (!imagePrompt.trim()) return;
-    setImageBusy(true);
-    try {
-      const images = await generateImage({
-        prompt: `${imagePrompt}, realistic, professional photography, high detail, natural lighting`,
-        style: "realistic",
-        ratio: "4:3",
-        count: 1,
-      });
-      const src = images[0]?.url;
-      if (!src) throw new Error("Mistral returned no image");
-      setLocalImages((prev) => [src, ...prev].slice(0, 16));
-      setImagePrompt("");
-      toast.success("Image generated");
-    } catch (error: any) {
-      toast.error(error?.message ?? "Image generation failed");
-    } finally {
-      setImageBusy(false);
-    }
+    window.open("https://supernova-image.vercel.app", "_blank", "noreferrer");
+    return;
   };
 
-  /* ── Regenerate with Mistral ── */
   const regen = async () => {
     if (!active) return;
     setRegenLoading(true);
     try {
-      const result = await completeWebsiteAI([
-        {
-          role: "system",
-          content: "You are MATRIX-AI. Output ONLY complete HTML starting with <!DOCTYPE html>. Use Tailwind CDN. Modern, responsive, beautiful.",
-        },
-        {
-          role: "user",
-          content: `Improve this existing page and output the FULL updated HTML only. Prompt: ${active.prompt}\n\nCurrent HTML:\n${editedHtml || active.html}`,
-        },
-     ], { timeoutMs: 90_000 });
+      const result = await completeWebsiteAI(
+        [
+          {
+            role: "system",
+            content:
+              "You are MATRIX-AI. Output ONLY complete HTML starting with <!DOCTYPE html>. Use Tailwind CDN. Modern, responsive, beautiful.",
+          },
+          {
+            role: "user",
+            content: `Improve this existing page and output the FULL updated HTML only. Prompt: ${active.prompt}\n\nCurrent HTML:\n${editedHtml || active.html}`,
+          },
+        ],
+        { timeoutMs: 90_000 }
+      );
+
       const html = ensureHTML(cleanHTML(result.content));
       if (html.length <= 80) throw new Error("AI returned an incomplete page");
+
       setEditedHtml(html);
       setActive((prev) => (prev ? { ...prev, html } : null));
-      await updateDoc(doc(db, "generations", active.id), { html, updated_at: new Date().toISOString() });
+      await updateDoc(doc(db, "generations", active.id), {
+        html,
+        updated_at: new Date().toISOString(),
+      });
       toast.success(`Regenerated with ${result.provider}`);
     } catch (e: any) {
       toast.error(e.message ?? "Regen failed");
@@ -402,7 +416,6 @@ export default function Dashboard() {
     }
   };
 
-  /* ── Filtered list ── */
   const filtered = items.filter(
     (g) =>
       !search ||
@@ -410,28 +423,22 @@ export default function Dashboard() {
       (g.title ?? "").toLowerCase().includes(search.toLowerCase())
   );
 
-  const deviceSize: Record<Device, string> = {
+  const deviceSize: DeviceSize = {
     desktop: "w-full h-full",
-    tablet:  "w-[768px] h-[1024px] mx-auto",
-    mobile:  "w-[390px]  h-[844px]  mx-auto",
+    tablet: "w-[768px] h-[1024px] mx-auto",
+    mobile: "w-[390px] h-[844px] mx-auto",
   };
 
-  /* ---------------------------------------------------------------- */
-  /*  Render                                                            */
-  /* ---------------------------------------------------------------- */
   return (
     <div className="min-h-screen">
       <Navbar />
 
       <main className="container pt-24 pb-20">
-        {/* ── Page header ── */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <LayoutDashboard className="w-5 h-5 text-primary" />
-              <p className="font-mono text-xs text-primary tracking-widest uppercase">
-                
-              </p>
+              <p className="font-mono text-xs text-primary tracking-widest uppercase" />
             </div>
             <h1 className="font-display text-3xl md:text-4xl font-bold">
               Your <span className="text-gradient">workspace</span>
@@ -445,12 +452,15 @@ export default function Dashboard() {
           </Button>
         </div>
 
-        {/* ── Profile + Supernova strip ── */}
         <div className="grid md:grid-cols-3 gap-4 mb-8">
           <div className="md:col-span-2 glass rounded-xl p-5 border border-border/50">
             <div className="flex items-center gap-3 mb-3">
               {(profile?.photoURL || user?.photoURL) ? (
-                <img src={profile?.photoURL || user!.photoURL!} alt="" className="w-12 h-12 rounded-full object-cover" />
+                <img
+                  src={profile?.photoURL || user!.photoURL!}
+                  alt=""
+                  className="w-12 h-12 rounded-full object-cover"
+                />
               ) : (
                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-fuchsia-500 to-blue-500 grid place-items-center text-sm font-bold text-white">
                   {(nameDraft || user?.email || "?").charAt(0).toUpperCase()}
@@ -460,18 +470,30 @@ export default function Dashboard() {
                 <p className="text-xs text-muted-foreground font-mono">Your Matrixbook profile</p>
                 <p className="text-sm font-semibold truncate">{user?.email}</p>
               </div>
-              <Button size="sm" onClick={persistProfile} disabled={savingProfile} className="shrink-0">
-                {savingProfile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Save
+              <Button
+                size="sm"
+                onClick={persistProfile}
+                disabled={savingProfile}
+                className="shrink-0"
+              >
+                {savingProfile ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Save className="w-3.5 h-3.5" />
+                )}
+                {" "}Save
               </Button>
             </div>
+
             <div className="grid sm:grid-cols-2 gap-2">
               <Input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} placeholder="Display name" className="bg-muted/30" />
               <Input value={statusDraft} onChange={(e) => setStatusDraft(e.target.value)} placeholder="Status (e.g. shipping a SaaS)" className="bg-muted/30" />
             </div>
             <Textarea value={bioDraft} onChange={(e) => setBioDraft(e.target.value)} placeholder="Tell the Matrixbook crew about yourself…" className="bg-muted/30 mt-2 min-h-16" />
           </div>
+
           <button
-            onClick={() => navigate("/supernova")}
+            onClick={() => window.open("https://supernova-image.vercel.app", "_blank", "noreferrer")}
             className="glass rounded-xl p-5 border border-border/50 text-left hover:border-primary/50 transition group"
           >
             <div className="flex items-center gap-2 mb-2">
@@ -485,15 +507,9 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {/* ── Search ── */}
         <div className="relative mb-6 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search builds..."
-            className="pl-9 bg-muted/30"
-          />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search builds..." className="pl-9 bg-muted/30" />
           {search && (
             <button
               onClick={() => setSearch("")}
@@ -504,13 +520,27 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* ── Stats row ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           {[
-            { label: "Total builds", value: items.length,                                                                                                    icon: Zap,           color: "text-primary"     },
-            { label: "This week",    value: items.filter((i) => new Date(i.created_at) > new Date(Date.now() - 7 * 86_400_000)).length,                      icon: LayoutDashboard, color: "text-violet-400" },
-            { label: "Today",        value: items.filter((i) => new Date(i.created_at).toDateString() === new Date().toDateString()).length,                  icon: Check,         color: "text-emerald-400" },
-            { label: "Account",      value: user?.displayName?.split(" ")[0] ?? "You",                                                                       icon: MousePointer2, color: "text-orange-400"  },
+            { label: "Total builds", value: items.length, icon: Zap, color: "text-primary" },
+            {
+              label: "This week",
+              value: items.filter((i) => new Date(i.created_at) > new Date(Date.now() - 7 * 86_400_000)).length,
+              icon: LayoutDashboard,
+              color: "text-violet-400",
+            },
+            {
+              label: "Today",
+              value: items.filter((i) => new Date(i.created_at).toDateString() === new Date().toDateString()).length,
+              icon: Check,
+              color: "text-emerald-400",
+            },
+            {
+              label: "Account",
+              value: user?.displayName?.split(" ")[0] ?? "You",
+              icon: Trash2,
+              color: "text-orange-400",
+            },
           ].map((s) => (
             <div key={s.label} className="glass rounded-xl p-4 border border-border/50">
               <div className="flex items-center justify-between mb-2">
@@ -522,7 +552,6 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* ── Build grid ── */}
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -534,17 +563,12 @@ export default function Dashboard() {
               <Zap className="w-8 h-8 text-primary" />
             </div>
             <div>
-              <p className="font-semibold text-lg mb-1">
-                {search ? "No results" : "No builds yet"}
-              </p>
-              <p className="text-muted-foreground text-sm">
-                {search
-                  ? "Try a different search term."
-                  : "Build your first page and it will appear here."}
-              </p>
+              <p className="font-semibold text-lg mb-1">{search ? "No results" : "No builds yet"}</p>
+              <p className="text-muted-foreground text-sm">{search ? "Try a different search term." : "Build your first page and it will appear here."}</p>
             </div>
             {!search && (
-              <Button variant="hero" onClick={() => navigate("/build")}>
+              <Button variant="hero" onClick={() => navigate("/build")}
+              >
                 <Plus className="w-4 h-4" /> Start building
               </Button>
             )}
@@ -552,10 +576,7 @@ export default function Dashboard() {
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {filtered.map((g) => (
-              <div
-                key={g.id}
-                className="group glass rounded-2xl overflow-hidden hover:border-primary/50 transition-all hover:-translate-y-1 hover:shadow-elevated"
-              >
+              <div key={g.id} className="group glass rounded-2xl overflow-hidden hover:border-primary/50 transition-all hover:-translate-y-1 hover:shadow-elevated">
                 <button onClick={() => openItem(g)} className="block w-full text-left">
                   <div className="aspect-video bg-white relative overflow-hidden">
                     <iframe
@@ -565,40 +586,23 @@ export default function Dashboard() {
                       sandbox=""
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-background/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-3">
-                      <span className="text-xs font-mono text-white bg-black/60 px-3 py-1 rounded-full">
-                        Open editor
-                      </span>
+                      <span className="text-xs font-mono text-white bg-black/60 px-3 py-1 rounded-full">Open editor</span>
                     </div>
                   </div>
                 </button>
                 <div className="p-4">
-                  <p className="text-sm font-medium line-clamp-1 mb-1">
-                    {g.title || g.prompt.slice(0, 45)}
-                  </p>
-                  <p className="text-xs text-muted-foreground line-clamp-1 mb-3">
-                    {g.prompt}
-                  </p>
+                  <p className="text-sm font-medium line-clamp-1 mb-1">{g.title || g.prompt.slice(0, 45)}</p>
+                  <p className="text-xs text-muted-foreground line-clamp-1 mb-3">{g.prompt}</p>
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-mono text-muted-foreground">
-                      {new Date(g.created_at).toLocaleDateString()}
-                    </span>
+                    <span className="text-[10px] font-mono text-muted-foreground">{new Date(g.created_at).toLocaleDateString()}</span>
                     <div className="flex gap-1">
-                      <Button
-                        variant="ghost" size="icon" className="h-7 w-7"
-                        onClick={() => openItem(g)} title="Edit"
-                      >
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openItem(g)} title="Edit">
                         <Edit3 className="w-3.5 h-3.5" />
                       </Button>
-                      <Button
-                        variant="ghost" size="icon" className="h-7 w-7"
-                        onClick={() => dlFile(g.html, g.title ?? "matrix")} title="Download"
-                      >
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => dlFile(g.html, g.title ?? "matrix")} title="Download">
                         <Download className="w-3.5 h-3.5" />
                       </Button>
-                      <Button
-                        variant="ghost" size="icon" className="h-7 w-7 hover:text-destructive"
-                        onClick={() => remove(g.id)} title="Delete"
-                      >
+                      <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-destructive" onClick={() => remove(g.id)} title="Delete">
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
@@ -610,38 +614,26 @@ export default function Dashboard() {
         )}
       </main>
 
-      {/* ================================================================ */}
-      {/*  Full-screen editor dialog                                        */}
-      {/* ================================================================ */}
       <Dialog open={!!active} onOpenChange={(o) => !o && setActive(null)}>
         <DialogContent className="max-w-[95vw] w-full h-[92vh] p-0 overflow-hidden glass-strong flex flex-col">
-          {/* Toolbar */}
           <DialogHeader className="px-4 py-3 border-b border-border/60 shrink-0">
             <DialogDescription className="sr-only">Preview, edit, regenerate, and save the selected generated website.</DialogDescription>
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <DialogTitle className="font-mono text-xs text-muted-foreground truncate max-w-xs">
-                {active?.prompt}
-              </DialogTitle>
-
+              <DialogTitle className="font-mono text-xs text-muted-foreground truncate max-w-xs">{active?.prompt}</DialogTitle>
               <div className="flex items-center gap-2 flex-wrap">
-                {/* Device switcher */}
                 <div className="flex glass rounded-lg p-0.5">
-                  {(
-                    [
-                      ["desktop", Monitor  ],
-                      ["tablet",  Tablet   ],
-                      ["mobile",  Smartphone],
-                    ] as [Device, typeof Monitor][]
-                  ).map(([d, Icon]) => (
+                  {([
+                    ["desktop", Monitor],
+                    ["tablet", Tablet],
+                    ["mobile", Smartphone],
+                  ] as [Device, typeof Monitor][]).map(([d, Icon]) => (
                     <button
                       key={d}
                       onClick={() => setDevice(d)}
                       aria-label={d}
                       className={
                         "p-1.5 rounded-md transition-colors " +
-                        (device === d
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground hover:text-foreground")
+                        (device === d ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")
                       }
                     >
                       <Icon className="w-3.5 h-3.5" />
@@ -649,7 +641,6 @@ export default function Dashboard() {
                   ))}
                 </div>
 
-                {/* Preview / Code tab */}
                 <div className="flex glass rounded-lg p-0.5">
                   {(["preview", "code"] as const).map((t) => (
                     <button
@@ -657,9 +648,7 @@ export default function Dashboard() {
                       onClick={() => setTab(t)}
                       className={
                         "flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors " +
-                        (tab === t
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground hover:text-foreground")
+                        (tab === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")
                       }
                     >
                       {t === "preview" ? <Eye className="w-3 h-3" /> : <Code2 className="w-3 h-3" />}
@@ -668,44 +657,22 @@ export default function Dashboard() {
                   ))}
                 </div>
 
-                {/* Edit mode */}
-                <Button
-                  size="sm"
-                  variant={editMode ? "default" : "outline"}
-                  onClick={() => setEditMode((v) => !v)}
-                  className="text-xs h-8"
-                >
+                <Button size="sm" variant={editMode ? "default" : "outline"} onClick={() => setEditMode((v) => !v)} className="text-xs h-8">
                   <MousePointer2 className="w-3 h-3 mr-1" />
                   {editMode ? "Editing" : "Edit"}
                 </Button>
 
-                {/* Image library */}
-                <Button
-                  size="sm" variant="outline"
-                  onClick={() => setImgPanel(true)}
-                  className="text-xs h-8"
-                >
+                <Button size="sm" variant="outline" onClick={() => setImgPanel(true)} className="text-xs h-8">
                   <ImageIcon className="w-3 h-3 mr-1" /> Images
                 </Button>
 
-                {/* Regenerate */}
-                <Button
-                  size="sm" variant="outline"
-                  onClick={regen} disabled={regenLoading}
-                  className="text-xs h-8"
-                >
-                  {regenLoading
-                    ? <Loader2 className="w-3 h-3 animate-spin" />
-                    : <RefreshCw className="w-3 h-3 mr-1" />}
+                <Button size="sm" variant="outline" onClick={regen} disabled={regenLoading} className="text-xs h-8">
+                  {regenLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
                   Regen
                 </Button>
 
-                {/* Save edits */}
                 {editMode && (
-                  <Button
-                    size="sm" onClick={saveEdits}
-                    className="text-xs h-8 bg-emerald-600 hover:bg-emerald-500"
-                  >
+                  <Button size="sm" onClick={saveEdits} className="text-xs h-8 bg-emerald-600 hover:bg-emerald-500">
                     <Check className="w-3 h-3 mr-1" /> Save
                   </Button>
                 )}
@@ -719,7 +686,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Edit hint banner */}
             {editMode && tab === "preview" && (
               <div className="mt-2 flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-1.5">
                 <Type className="w-3.5 h-3.5 shrink-0" />
@@ -728,14 +694,10 @@ export default function Dashboard() {
             )}
           </DialogHeader>
 
-          {/* Content area */}
           <div className="flex-1 overflow-hidden bg-zinc-950">
             {tab === "preview" ? (
               <div className="w-full h-full overflow-auto flex items-start justify-center p-4">
-                <div
-                  className={"bg-white rounded-xl overflow-hidden shadow-2xl transition-all duration-300 " + deviceSize[device]}
-                  style={{ minHeight: "400px" }}
-                >
+                <div className={"bg-white rounded-xl overflow-hidden shadow-2xl transition-all duration-300 " + deviceSize[device]} style={{ minHeight: "400px" }}>
                   <iframe
                     ref={iframeRef}
                     title="editor-preview"
@@ -759,16 +721,13 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* ================================================================ */}
-      {/*  Image library dialog                                             */}
-      {/* ================================================================ */}
       <Dialog open={imgPanel} onOpenChange={setImgPanel}>
         <DialogContent className="max-w-2xl glass-strong">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ShoppingBag className="w-4 h-4 text-primary" /> Image Library
             </DialogTitle>
-            <DialogDescription>Upload local images, generate realistic images, then copy or replace images in your page.</DialogDescription>
+            <DialogDescription>Upload local images, generate images, then copy or replace images in your page.</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -781,21 +740,24 @@ export default function Dashboard() {
             <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
               <Textarea value={imagePrompt} onChange={(e) => setImagePrompt(e.target.value)} placeholder="Generate a realistic image, e.g. luxury SaaS dashboard hero photo…" className="min-h-20 bg-muted/30" />
               <Button onClick={generateImageAsset} disabled={imageBusy || !imagePrompt.trim()} className="self-end">
-                {imageBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />} Generate
+                <Wand2Icon className="w-4 h-4" /> Generate
               </Button>
             </div>
 
             {localImages.length > 0 && (
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-44 overflow-y-auto scrollbar-thin">
                 {localImages.map((src, i) => (
-                  <button key={i} onClick={() => (selectedImgSrc ? replaceImage(src) : copyText(src))} className="aspect-square rounded-lg overflow-hidden border border-border/50 hover:border-primary/60 transition-all group relative">
+                  <button
+                    key={i}
+                    onClick={() => (selectedImgSrc ? replaceImage(src) : copyText(src))}
+                    className="aspect-square rounded-lg overflow-hidden border border-border/50 hover:border-primary/60 transition-all group relative"
+                  >
                     <img src={src} alt={`Local image ${i + 1}`} className="w-full h-full object-cover" loading="lazy" />
                   </button>
                 ))}
               </div>
             )}
 
-            {/* Category chips */}
             <div className="flex flex-wrap gap-2">
               {IMG_CATS.map((c) => (
                 <button
@@ -813,18 +775,11 @@ export default function Dashboard() {
               ))}
             </div>
 
-            {/* Search input */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                value={imgSearch}
-                onChange={(e) => setImgSearch(e.target.value)}
-                placeholder="Search images (e.g. coffee shop, tech startup)…"
-                className="pl-9 bg-muted/30"
-              />
+              <Input value={imgSearch} onChange={(e) => setImgSearch(e.target.value)} placeholder="Search images (e.g. coffee shop, tech startup)…" className="pl-9 bg-muted/30" />
             </div>
 
-            {/* Image grid */}
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-72 overflow-y-auto scrollbar-thin">
               {imgResults.map((src, i) => (
                 <button
@@ -832,17 +787,10 @@ export default function Dashboard() {
                   onClick={() => (selectedImgSrc ? replaceImage(src) : copyText(src))}
                   className="aspect-square rounded-lg overflow-hidden border border-border/50 hover:border-primary/60 transition-all hover:scale-105 group relative"
                 >
-                  <img
-                    src={src}
-                    alt={"img " + i}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
+                  <img src={src} alt={"img " + i} className="w-full h-full object-cover" loading="lazy" />
                   <div className="absolute inset-0 bg-primary/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     {selectedImgSrc ? (
-                      <span className="text-xs text-white font-semibold bg-black/60 px-2 py-0.5 rounded">
-                        Replace
-                      </span>
+                      <span className="text-xs text-white font-semibold bg-black/60 px-2 py-0.5 rounded">Replace</span>
                     ) : (
                       <Copy className="w-4 h-4 text-white" />
                     )}
@@ -852,9 +800,7 @@ export default function Dashboard() {
             </div>
 
             {selectedImgSrc && (
-              <p className="text-xs text-amber-400 font-mono">
-                Click any image above to replace the selected image in your page.
-              </p>
+              <p className="text-xs text-amber-400 font-mono">Click any image above to replace the selected image in your page.</p>
             )}
 
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -867,3 +813,4 @@ export default function Dashboard() {
     </div>
   );
 }
+

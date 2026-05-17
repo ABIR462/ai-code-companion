@@ -1,0 +1,2 @@
+Dashboard.tsx is currently corrupted (syntax broken around generateImageAsset). Repair plan: replace src/pages/Dashboard.tsx with a corrected version that keeps all non-supernova features but changes image generation to external redirect only, and removes any import/usage of generateImage from supernovaChat.
+

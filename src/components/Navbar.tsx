@@ -36,7 +36,7 @@ export function Navbar() {
           <a href="/#how" className="hover:text-foreground transition-colors">How it works</a>
           {user && (
             <>
-              <Link to="/supernova" className="hover:text-foreground transition-colors">Supernova</Link>
+              <a href="https://supernova-image.vercel.app" target="_blank" rel="noreferrer" className="hover:text-foreground transition-colors">Supernova</a>
               <Link to="/dashboard" className="hover:text-foreground transition-colors">Dashboard</Link>
             </>
           )}
@@ -71,9 +71,9 @@ export function Navbar() {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link to="/supernova">
+                <a href="https://supernova-image.vercel.app" target="_blank" rel="noreferrer">
                   <Wand2 className="w-4 h-4 mr-2" /> Supernova
-                </Link>
+                </a>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate("/#builder")}>
                 <Sparkles className="w-4 h-4 mr-2" /> New build

@@ -20,7 +20,7 @@ import {
   StopCircle,
   Wand2,
 } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -468,9 +468,9 @@ export default function Build() {
       {/* Top bar */}
       <header className="flex items-center justify-between px-3 py-2 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-2">
-          <Link to="/" aria-label="Back to home">
+          <a href="/" aria-label="Back to home" className="flex items-center">
             <ArrowLeft className="w-5 h-5" />
-          </Link>
+          </a>
           {!isMobile && (
             <span className="font-semibold text-sm tracking-wide">
               Matrixbook IDE
@@ -482,13 +482,15 @@ export default function Build() {
         </div>
 
         <div className="flex items-center gap-1">
-          <Link
-            to="/supernova"
+          <a
+            href="https://supernova-image.vercel.app"
+            target="_blank"
+            rel="noreferrer"
             title="Open Supernova Image Studio"
             className="inline-flex items-center justify-center w-9 h-9 rounded-md text-white/70 hover:text-white hover:bg-white/5 transition-colors"
           >
             <ImageIcon className="w-4 h-4" />
-          </Link>
+          </a>
           {history.length > 0 && (
             <Button
               size="icon"
